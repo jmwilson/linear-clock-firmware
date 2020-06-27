@@ -1,0 +1,10 @@
+FLASH_OBProgramInitTypeDef ob;
+HAL_FLASH_Unlock();
+HAL_FLASH_OB_Unlock();
+ob.OptionType = OPTIONBYTE_USER;
+ob.USERType = OB_USER_NRST_MODE;
+ob.USERConfig = OB_RESET_MODE_INPUT_OUTPUT;
+HAL_FLASHEx_OBProgram(&ob);
+HAL_FLASH_OB_Launch();
+HAL_FLASH_OB_Lock();
+HAL_FLASH_Lock();
