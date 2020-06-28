@@ -42,7 +42,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define MIN_PWM_BRIGHTNESS 0.2f
+#define BRIGHTNESS_TAU 0.00833333377f
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -186,8 +187,19 @@ int main(void)
     auto jd = julian_date(year, month, day, hour, minute, second);
     auto day_fraction_s = compute_day_fraction(latitude * 1e-7f, longitude * 1e-7f, jd);
 
-    int32_t day_fraction = roundf(112*day_fraction_s.day_fraction);
-    int32_t sunset_fraction = roundf(112*day_fraction_s.daylength_fraction);
+    auto day_fraction = (int32_t)roundf(112*day_fraction_s.day_fraction);
+    auto sunset_fraction = (int32_t)roundf(112*day_fraction_s.daylength_fraction);
+
+    float dimming = 1;
+    // Apply a bathtub-like curve to the output brightness
+    if (day_fraction_s.day_fraction > day_fraction_s.daylength_fraction) {
+      dimming = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)*fmaxf(
+        expf((day_fraction_s.daylength_fraction
+          - day_fraction_s.day_fraction)/BRIGHTNESS_TAU),
+        expf((day_fraction_s.day_fraction - 1)/BRIGHTNESS_TAU)
+      );
+    }
+    htlc592x.enablePWM((uint16_t)(1000*dimming));
 
     uint8_t serial_buf[28];
     // Set bit sunset_fraction in the stream of bits
