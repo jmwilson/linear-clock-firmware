@@ -231,8 +231,8 @@ int main(void)
   myGPS.saveConfiguration();
   HAL_Serial_Print p(huart2);
   Configure_TLC592x();
-  //htlc592x.disablePWM();
-  htlc592x.enablePWM(100);
+  htlc592x.disablePWM();
+  //htlc592x.enablePWM(500);
   HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_RESET);
   p.println("\r\nReset");
   /* USER CODE END 2 */
@@ -433,7 +433,7 @@ static void MX_TIM14_Init(void)
   htim14.Instance = TIM14;
   htim14.Init.Prescaler = 15;
   htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim14.Init.Period = 999;
+  htim14.Init.Period = 63;
   htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim14) != HAL_OK)
@@ -445,7 +445,7 @@ static void MX_TIM14_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM2;
-  sConfigOC.Pulse = 500;
+  sConfigOC.Pulse = 32;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim14, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -478,9 +478,9 @@ static void MX_TIM16_Init(void)
 
   /* USER CODE END TIM16_Init 1 */
   htim16.Instance = TIM16;
-  htim16.Init.Prescaler = 64;
+  htim16.Init.Prescaler = 1;
   htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim16.Init.Period = 99;
+  htim16.Init.Period = 999;
   htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim16.Init.RepetitionCounter = 0;
   htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -538,9 +538,9 @@ static void MX_TIM17_Init(void)
 
   /* USER CODE END TIM17_Init 1 */
   htim17.Instance = TIM17;
-  htim17.Init.Prescaler = 15;
+  htim17.Init.Prescaler = 3;
   htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim17.Init.Period = 999;
+  htim17.Init.Period = 15;
   htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim17.Init.RepetitionCounter = 0;
   htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -652,6 +652,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
           }
       } else if (htlc592x.op == TLC592x_OP_SWITCH_TO_SPECIAL) {
         switch (htlc592x.txCount) {
+          case 0:
+            HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
+            break;
           case 1:
             HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_RESET);
             break;
@@ -667,6 +671,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         }
       } else {
         switch (htlc592x.txCount) {
+          case 0:
+            HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
+            break;
           case 1:
             HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_RESET);
             break;

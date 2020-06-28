@@ -9,7 +9,9 @@ TLC592x::TLC592x(void)
 {
     state = TLC592x_STATE_READY;
     op = TLC592x_OP_SHIFT_OUT;
+    txBuffer = 0;
     txCount = 0;
+    txSize = 0;
 }
 
 void TLC592x::shiftOut(uint8_t *buffer, uint16_t size_in_bits)
@@ -23,15 +25,8 @@ void TLC592x::shiftOut(uint8_t *buffer, uint16_t size_in_bits)
     txSize = size_in_bits;
     txCount = 0;
 
-    // Set first bit out
-    if (*buffer & 1) {
-        HAL_GPIO_WritePin(TLC592x_SDO_GPIO_Port, TLC592x_SDO_Pin, GPIO_PIN_SET);
-    } else {
-        HAL_GPIO_WritePin(TLC592x_SDO_GPIO_Port, TLC592x_SDO_Pin, GPIO_PIN_RESET);
-    }
-
     // Start the clock
-    TIM14->CNT = 0;
+    TIM14->EGR |= TIM_EGR_UG;
     HAL_TIM_PWM_Start(&htim14, TIM_CHANNEL_1);
     HAL_TIM_Base_Start_IT(&htim14);
 }
@@ -46,12 +41,8 @@ void TLC592x::switchToSpecialMode()
 
     disablePWM();
 
-    // Start the mode switching sequence: OE=1, LE=0
-    HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
-
     // Start the clock
-    TIM14->CNT = 0;
+    TIM14->EGR |= TIM_EGR_UG;
     HAL_TIM_PWM_Start(&htim14, TIM_CHANNEL_1);
     HAL_TIM_Base_Start_IT(&htim14);
 }
@@ -66,12 +57,8 @@ void TLC592x::switchToNormalMode()
 
     disablePWM();
 
-    // Start the mode switching sequence: OE=1, LE=0
-    HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
-
     // Start the clock
-    TIM14->CNT = 0;
+    TIM14->EGR |= TIM_EGR_UG;
     HAL_TIM_PWM_Start(&htim14, TIM_CHANNEL_1);
     HAL_TIM_Base_Start_IT(&htim14);
 }
