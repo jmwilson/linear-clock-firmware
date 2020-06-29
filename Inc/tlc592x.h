@@ -7,7 +7,6 @@ extern "C" {
 
 void TLC592x_Switch_To_Special_Mode(void);
 void TLC592x_Switch_To_Normal_Mode(void);
-void TLC592x_Set_Brightness(uint16_t level);
 
 #ifdef __cplusplus
 }

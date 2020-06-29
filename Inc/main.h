@@ -68,8 +68,8 @@ void Error_Handler(void);
 #define TLC592x_LE_GPIO_Port GPIOA
 #define NUCLEO_LED_Pin GPIO_PIN_6
 #define NUCLEO_LED_GPIO_Port GPIOC
-#define TLC592x_SDO_Pin GPIO_PIN_12
-#define TLC592x_SDO_GPIO_Port GPIOA
+#define TLC592x_SDI_Pin GPIO_PIN_12
+#define TLC592x_SDI_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

@@ -5,15 +5,17 @@
 
 static void TLC592x_Mode_Switch(bool special) {
   uint32_t bsrr_frames[] = {
-    (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
-    (TLC592x_LE_Pin << 16) | (TLC592x_OE_Pin << 16),
-    (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
-    special ? TLC592x_LE_Pin : (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
-    (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
+    (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
+    (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | (TLC592x_OE_Pin << 16),
+    (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
+    special
+      ? (TLC592x_CLK_Pin << 16) | TLC592x_LE_Pin | TLC592x_OE_Pin
+      : (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
+    (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
   };
   for (int8_t i = 0; i < sizeof(bsrr_frames)/sizeof(uint32_t); i++) {
     // Clock low
-    GPIOA->BSRR = (TLC592x_CLK_Pin << 16) | bsrr_frames[i];
+    GPIOA->BSRR = bsrr_frames[i];
     __NOP(); __NOP(); __NOP(); __NOP();
     __NOP(); __NOP(); __NOP(); __NOP();
     __NOP(); __NOP(); __NOP(); __NOP();
@@ -25,9 +27,9 @@ static void TLC592x_Mode_Switch(bool special) {
 
 void TLC592x_Switch_To_Special_Mode(void)
 {
-  // Reconfigute CLK, LE, and OE pins as GPIO
+  // Reconfigute CLK and OE pins as GPIO
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-  GPIO_InitStruct.Pin = TLC592x_CLK_Pin|TLC592x_OE_Pin|TLC592x_LE_Pin;
+  GPIO_InitStruct.Pin = TLC592x_CLK_Pin|TLC592x_OE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
@@ -36,27 +38,20 @@ void TLC592x_Switch_To_Special_Mode(void)
   // Bit-bang the mode-switching sequence
   TLC592x_Mode_Switch(true);
 
-  // Restore CLK and LE to peripherals, but leave OE in GPIO
+  // Restore CLK to peripheral, but leave OE in GPIO
   GPIO_InitStruct.Pin = TLC592x_CLK_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   GPIO_InitStruct.Alternate = GPIO_AF0_SPI1;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  GPIO_InitStruct.Pin = TLC592x_LE_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF5_TIM17;
-  HAL_GPIO_Init(TLC592x_LE_GPIO_Port, &GPIO_InitStruct);
 }
 
 void TLC592x_Switch_To_Normal_Mode(void)
 {
-  // Reconfigute CLK, LE, and OE pins as GPIO
+  // Reconfigute CLK and OE pins as GPIO
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-  GPIO_InitStruct.Pin = TLC592x_CLK_Pin|TLC592x_OE_Pin|TLC592x_LE_Pin;
+  GPIO_InitStruct.Pin = TLC592x_CLK_Pin|TLC592x_OE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
@@ -65,7 +60,7 @@ void TLC592x_Switch_To_Normal_Mode(void)
   // Bit-bang the mode-switching sequence
   TLC592x_Mode_Switch(false);
 
-  // Restore CLK, LE and OE pins to peripherals
+  // Restore CLK and OE pins to peripherals
   GPIO_InitStruct.Pin = TLC592x_CLK_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -73,22 +68,10 @@ void TLC592x_Switch_To_Normal_Mode(void)
   GPIO_InitStruct.Alternate = GPIO_AF0_SPI1;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  GPIO_InitStruct.Pin = TLC592x_LE_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF5_TIM17;
-  HAL_GPIO_Init(TLC592x_LE_GPIO_Port, &GPIO_InitStruct);
-
   GPIO_InitStruct.Pin = TLC592x_OE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.Alternate = GPIO_AF5_TIM16;
   HAL_GPIO_Init(TLC592x_OE_GPIO_Port, &GPIO_InitStruct);
-}
-
-void TLC592x_Set_Brightness(uint16_t level)
-{
-  TIM16->CCR1 = level;
 }
