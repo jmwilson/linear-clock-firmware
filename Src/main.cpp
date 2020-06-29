@@ -43,30 +43,33 @@
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 #define MIN_PWM_BRIGHTNESS 0.2f
-#define BRIGHTNESS_TAU 0.00833333377f
+#define BRIGHTNESS_TAU 0.013888889f
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
-TIM_HandleTypeDef htim14;
+SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef hdma_spi1_tx;
+
 TIM_HandleTypeDef htim16;
 TIM_HandleTypeDef htim17;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-TLC592x htlc592x;
+static uint8_t tlc592x_buf[28];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_TIM14_Init(void);
 static void MX_TIM16_Init(void);
 static void MX_TIM17_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -75,29 +78,17 @@ static void MX_TIM17_Init(void);
 /* USER CODE BEGIN 0 */
 static void Configure_TLC592x()
 {
-  htlc592x.switchToSpecialMode();
-  uint8_t config[28] = {
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
+  TLC592x_Switch_To_Special_Mode();
+  for (int8_t i = 0; i < 14; i++) {
+    // {CM,HC,[CC0:CC5]} = {0,1,000000}
+    tlc592x_buf[2*i] = 0x00;
+    tlc592x_buf[2*i + 1] = 0x40;
+  }
+  HAL_SPI_Transmit_DMA(&hspi1, tlc592x_buf, sizeof(tlc592x_buf));
+  while (hspi1.State != HAL_SPI_STATE_READY) { }
+  TLC592x_Switch_To_Normal_Mode();
 
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-    0x00,0x40,
-  };
-  while (htlc592x.state == TLC592x_STATE_BUSY) ;
-  htlc592x.shiftOut(config, 224);
-  while (htlc592x.state == TLC592x_STATE_BUSY) ;
-  htlc592x.switchToNormalMode();
-  while (htlc592x.state == TLC592x_STATE_BUSY) ;
+  HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
 }
 /* USER CODE END 0 */
 
@@ -129,11 +120,12 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C1_Init();
   MX_USART2_UART_Init();
-  MX_TIM14_Init();
   MX_TIM16_Init();
   MX_TIM17_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   SFE_UBLOX_GPS myGPS;
   myGPS.begin(hi2c1);
@@ -141,11 +133,8 @@ int main(void)
   // myGPS.getProtocolVersion();
   myGPS.setI2COutput(COM_TYPE_UBX);
   myGPS.saveConfiguration();
-  HAL_Serial_Print p(huart2);
   Configure_TLC592x();
-  htlc592x.disablePWM();
-  //htlc592x.enablePWM(500);
-  HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_RESET);
+  HAL_Serial_Print p(huart2);
   p.println("\r\nReset");
   /* USER CODE END 2 */
 
@@ -190,38 +179,37 @@ int main(void)
     auto day_fraction = (int32_t)roundf(112*day_fraction_s.day_fraction);
     auto sunset_fraction = (int32_t)roundf(112*day_fraction_s.daylength_fraction);
 
-    float dimming = 1;
+    float dimming = .8;
     // Apply a bathtub-like curve to the output brightness
     if (day_fraction_s.day_fraction > day_fraction_s.daylength_fraction) {
-      dimming = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)*fmaxf(
+      dimming = MIN_PWM_BRIGHTNESS + (dimming - MIN_PWM_BRIGHTNESS)*fmaxf(
         expf((day_fraction_s.daylength_fraction
           - day_fraction_s.day_fraction)/BRIGHTNESS_TAU),
         expf((day_fraction_s.day_fraction - 1)/BRIGHTNESS_TAU)
       );
     }
-    htlc592x.enablePWM((uint16_t)(1000*dimming));
+    TLC592x_Set_Brightness((uint16_t)(1000*dimming));
 
-    uint8_t serial_buf[28];
     // Set bit sunset_fraction in the stream of bits
     for (uint8_t b = 0; b < 14; b++) {
       if (112 - 8*(b + 1) <= sunset_fraction && sunset_fraction < 112 - 8*b) {
-        serial_buf[b] = (uint8_t)(1 << (112 - sunset_fraction - 8*b));
+        tlc592x_buf[b] = (uint8_t)(1 << (112 - sunset_fraction - 8*b));
       } else {
-        serial_buf[b] = 0;
+        tlc592x_buf[b] = 0;
       }
     }
 
     // Set day_fraction bits high starting from the left
     for (uint8_t b = 0; b < 14; b++) {
       if (day_fraction >= 112 - 8*b) {
-        serial_buf[14 + b] = 0xff;
+        tlc592x_buf[14 + b] = 0xff;
       } else if (day_fraction < 112 - 8*(b + 1)) {
-        serial_buf[14 + b] = 0x00;
+        tlc592x_buf[14 + b] = 0x00;
       } else {
-        serial_buf[14 + b] = (uint8_t)(0xff << (112 - day_fraction - 8*b));
+        tlc592x_buf[14 + b] = (uint8_t)(0xff << (112 - day_fraction - 8*b));
       }
     }
-    htlc592x.shiftOut(serial_buf, 224);
+    HAL_SPI_Transmit_DMA(&hspi1, tlc592x_buf, sizeof(tlc592x_buf));
 
     p.print("Day fraction: ");
     p.println(day_fraction_s.day_fraction);
@@ -337,48 +325,42 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief TIM14 Initialization Function
+  * @brief SPI1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_TIM14_Init(void)
+static void MX_SPI1_Init(void)
 {
 
-  /* USER CODE BEGIN TIM14_Init 0 */
+  /* USER CODE BEGIN SPI1_Init 0 */
 
-  /* USER CODE END TIM14_Init 0 */
+  /* USER CODE END SPI1_Init 0 */
 
-  TIM_OC_InitTypeDef sConfigOC = {0};
+  /* USER CODE BEGIN SPI1_Init 1 */
 
-  /* USER CODE BEGIN TIM14_Init 1 */
-
-  /* USER CODE END TIM14_Init 1 */
-  htim14.Instance = TIM14;
-  htim14.Init.Prescaler = 15;
-  htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim14.Init.Period = 63;
-  htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim14) != HAL_OK)
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_LSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 7;
+  hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
   }
-  if (HAL_TIM_PWM_Init(&htim14) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM2;
-  sConfigOC.Pulse = 32;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim14, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM14_Init 2 */
+  /* USER CODE BEGIN SPI1_Init 2 */
 
-  /* USER CODE END TIM14_Init 2 */
-  HAL_TIM_MspPostInit(&htim14);
+  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -457,13 +439,16 @@ static void MX_TIM17_Init(void)
 
   /* USER CODE END TIM17_Init 0 */
 
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
   /* USER CODE BEGIN TIM17_Init 1 */
 
   /* USER CODE END TIM17_Init 1 */
   htim17.Instance = TIM17;
-  htim17.Init.Prescaler = 3;
+  htim17.Init.Prescaler = 0;
   htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim17.Init.Period = 15;
+  htim17.Init.Period = 7;
   htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim17.Init.RepetitionCounter = 0;
   htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -471,13 +456,41 @@ static void MX_TIM17_Init(void)
   {
     Error_Handler();
   }
+  if (HAL_TIM_PWM_Init(&htim17) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_OnePulse_Init(&htim17, TIM_OPMODE_SINGLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM2;
+  sConfigOC.Pulse = 1;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_PWM_ConfigChannel(&htim17, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.BreakFilter = 0;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim17, &sBreakDeadTimeConfig) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM17_Init 2 */
 
   /* USER CODE END TIM17_Init 2 */
+  HAL_TIM_MspPostInit(&htim17);
 
 }
 
@@ -518,6 +531,22 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -531,17 +560,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, TLC592x_LE_Pin|TLC592x_SDO_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(NUCLEO_LED_GPIO_Port, NUCLEO_LED_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pins : TLC592x_LE_Pin TLC592x_SDO_Pin */
-  GPIO_InitStruct.Pin = TLC592x_LE_Pin|TLC592x_SDO_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : NUCLEO_LED_Pin */
   GPIO_InitStruct.Pin = NUCLEO_LED_Pin;
@@ -553,70 +572,11 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-  if (htim->Instance == TIM14) {    // TLC592x CLK
-    if (htlc592x.txCount == htlc592x.txSize) {  // Sequence finished
-      HAL_TIM_PWM_Stop(&htim14, TIM_CHANNEL_1);
-      HAL_TIM_Base_Stop_IT(&htim14);
-      if (htlc592x.op == TLC592x_OP_SHIFT_OUT) {  // Pulse LE
-        HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_SET);
-        HAL_TIM_Base_Start_IT(&htim17);
-      }
-      htlc592x.state = TLC592x_STATE_READY;
-    } else {
-      if (htlc592x.op == TLC592x_OP_SHIFT_OUT) {
-          uint16_t pos = htlc592x.txCount / 8;
-          uint8_t bit = htlc592x.txCount % 8;
-          if (htlc592x.txBuffer[pos] & (1 << bit)) {
-            HAL_GPIO_WritePin(TLC592x_SDO_GPIO_Port, TLC592x_SDO_Pin, GPIO_PIN_SET);
-          } else {
-            HAL_GPIO_WritePin(TLC592x_SDO_GPIO_Port, TLC592x_SDO_Pin, GPIO_PIN_RESET);
-          }
-      } else if (htlc592x.op == TLC592x_OP_SWITCH_TO_SPECIAL) {
-        switch (htlc592x.txCount) {
-          case 0:
-            HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_SET);
-            HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
-            break;
-          case 1:
-            HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_RESET);
-            break;
-          case 2:
-            HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_SET);
-            break;
-          case 3:
-            HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_SET);
-            break;
-          case 4:
-            HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
-            break;
-        }
-      } else {
-        switch (htlc592x.txCount) {
-          case 0:
-            HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_SET);
-            HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
-            break;
-          case 1:
-            HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_RESET);
-            break;
-          case 2:
-            HAL_GPIO_WritePin(TLC592x_OE_GPIO_Port, TLC592x_OE_Pin, GPIO_PIN_SET);
-            break;
-          case 3:
-            HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
-            break;
-          case 4:
-            HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
-            break;
-        }
-      }
-      ++htlc592x.txCount;
-    }
-  } else if (htim->Instance == TIM17) {
-    HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
-    // One pulse mode will disable counter
+  if (hspi->Instance == SPI1) {
+    // Pulse LE
+    HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);
   }
 }
 /* USER CODE END 4 */

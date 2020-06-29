@@ -60,16 +60,16 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define TLC592x_CLK_Pin GPIO_PIN_4
+#define TLC592x_CLK_Pin GPIO_PIN_1
 #define TLC592x_CLK_GPIO_Port GPIOA
-#define TLC592x_LE_Pin GPIO_PIN_5
-#define TLC592x_LE_GPIO_Port GPIOA
 #define TLC592x_OE_Pin GPIO_PIN_6
 #define TLC592x_OE_GPIO_Port GPIOA
-#define TLC592x_SDO_Pin GPIO_PIN_7
-#define TLC592x_SDO_GPIO_Port GPIOA
+#define TLC592x_LE_Pin GPIO_PIN_7
+#define TLC592x_LE_GPIO_Port GPIOA
 #define NUCLEO_LED_Pin GPIO_PIN_6
 #define NUCLEO_LED_GPIO_Port GPIOC
+#define TLC592x_SDO_Pin GPIO_PIN_12
+#define TLC592x_SDO_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
