@@ -2106,6 +2106,8 @@ bool SFE_UBLOX_GPS::getPortSettings(uint8_t portID, uint16_t maxWait)
   packetCfg.len = 0;
   packetCfg.startingSpot = 0;
 
+  payloadCfg[0] = portID;
+
   return ((sendCommand(&packetCfg, maxWait)) == SFE_UBLOX_STATUS_DATA_RECEIVED); // We are expecting data and an ACK
 }
 
@@ -2125,6 +2127,50 @@ bool SFE_UBLOX_GPS::setPortOutput(uint8_t portID, uint8_t outStreamSettings, uin
 
   //payloadCfg is now loaded with current bytes. Change only the ones we need to
   payloadCfg[14] = outStreamSettings; //OutProtocolMask LSB - Set outStream bits
+
+  // Enable txReady
+  if (portID == 0) {
+    payloadCfg[2] = (6 << 2) | 1;
+    payloadCfg[3] = 0;
+  }
+
+  return ((sendCommand(&packetCfg, maxWait)) == SFE_UBLOX_STATUS_DATA_SENT); // We are only expecting an ACK
+}
+
+bool SFE_UBLOX_GPS::disableUART(uint16_t maxWait)
+{
+  packetCfg.cls = UBX_CLASS_CFG;
+  packetCfg.id = UBX_CFG_PRT;
+  packetCfg.len = 20;
+  packetCfg.startingSpot = 0;
+
+  payloadCfg[0] = COM_PORT_UART1;
+  payloadCfg[1] = 0;
+
+  payloadCfg[2] = 0;
+  payloadCfg[3] = 0;
+
+  payloadCfg[4] = 0xc0;
+  payloadCfg[5] = 0x80;
+  payloadCfg[6] = 0;
+  payloadCfg[7] = 0;
+
+  payloadCfg[8] = 0;
+  payloadCfg[9] = 0xc2;
+  payloadCfg[10] = 0x01;
+  payloadCfg[11] = 0;
+
+  payloadCfg[12] = 0;
+  payloadCfg[13] = 0;
+
+  payloadCfg[14] = 0;
+  payloadCfg[15] = 0;
+
+  payloadCfg[16] = 0;
+  payloadCfg[17] = 0;
+
+  payloadCfg[18] = 0;
+  payloadCfg[19] = 0;
 
   return ((sendCommand(&packetCfg, maxWait)) == SFE_UBLOX_STATUS_DATA_SENT); // We are only expecting an ACK
 }
@@ -2175,12 +2221,12 @@ bool SFE_UBLOX_GPS::setSPIOutput(uint8_t comSettings, uint16_t maxWait)
 //Set the rate at which the module will give us an updated navigation solution
 //Expects a number that is the updates per second. For example 1 = 1Hz, 2 = 2Hz, etc.
 //Max is 40Hz(?!)
-bool SFE_UBLOX_GPS::setNavigationFrequency(uint8_t navFreq, uint16_t maxWait)
+bool SFE_UBLOX_GPS::setNavigationFrequency(uint16_t navFreq, uint16_t maxWait)
 {
   //if(updateRate > 40) updateRate = 40; //Not needed: module will correct out of bounds values
 
   //Adjust the I2C polling timeout based on update rate
-  i2cPollingWait = 1000 / (navFreq * 4); //This is the number of ms to wait between checks for new I2C data
+  i2cPollingWait = navFreq / 4; //This is the number of ms to wait between checks for new I2C data
 
   //Query the module for the latest lat/long
   packetCfg.cls = UBX_CLASS_CFG;
@@ -2192,7 +2238,7 @@ bool SFE_UBLOX_GPS::setNavigationFrequency(uint8_t navFreq, uint16_t maxWait)
   if (sendCommand(&packetCfg, maxWait) != SFE_UBLOX_STATUS_DATA_RECEIVED) // We are expecting data and an ACK
     return (false);                                                       //If command send fails then bail
 
-  uint16_t measurementRate = 1000 / navFreq;
+  uint16_t measurementRate = navFreq;
 
   //payloadCfg is now loaded with current bytes. Change only the ones we need to
   payloadCfg[0] = measurementRate & 0xFF; //measRate LSB
@@ -2263,6 +2309,34 @@ bool SFE_UBLOX_GPS::setAutoPVT(bool enable, bool implicitUpdate, uint16_t maxWai
   }
   moduleQueried.all = false;
   return ok;
+}
+
+bool SFE_UBLOX_GPS::getMessageConfiguration(uint8_t msgClass, uint8_t msgID, uint16_t maxWait)
+{
+  //Poll for the current settings for a given message
+  packetCfg.cls = UBX_CLASS_CFG;
+  packetCfg.id = UBX_CFG_MSG;
+  packetCfg.len = 2;
+  packetCfg.startingSpot = 0;
+
+  payloadCfg[0] = msgClass;
+  payloadCfg[1] = msgID;
+
+  //This will load the payloadCfg array with current settings of the given register
+  if (sendCommand(&packetCfg, maxWait) != SFE_UBLOX_STATUS_DATA_RECEIVED) // We are expecting data and an ACK
+    return (false);                                                       //If command send fails then bail
+
+  _debugSerial->print(F("CLS  "));
+  _debugSerial->print(msgClass);
+  _debugSerial->print(F(" MSG "));
+  _debugSerial->print(msgID);
+  _debugSerial->print(F(" Rate:"));
+  for (int8_t i = 0; i < 6; i++) {
+    _debugSerial->print(F(" "));
+    _debugSerial->print(payloadCfg[2 + i]);
+  }
+  _debugSerial->println();
+  return true;
 }
 
 //Configure a given message type for a given port (UART1, I2C, SPI, etc)

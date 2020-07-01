@@ -42,8 +42,12 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define MIN_PWM_BRIGHTNESS 0.2f
-#define BRIGHTNESS_TAU 0.013888889f
+#define MIN_PWM_BRIGHTNESS 0.1f
+#define BRIGHTNESS_TAU 0.013888889f // 1/24 * 1/3
+
+#define NUM_TLC592x 14
+#define TLC592x_BUF_SIZE (2*NUM_TLC592x)
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -57,7 +61,8 @@ TIM_HandleTypeDef htim16;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-static uint8_t tlc592x_buf[28];
+static uint8_t tlc592x_buf[TLC592x_BUF_SIZE];
+static uint8_t ublox_data_available = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -77,16 +82,31 @@ static void MX_SPI1_Init(void);
 static void Configure_TLC592x()
 {
   TLC592x_Switch_To_Special_Mode();
-  for (int8_t i = 0; i < 14; i++) {
-    // {CM,HC,[CC0:CC5]} = {0,1,000000}
+
+  for (int8_t i = 0; i < NUM_TLC592x; i++) {
+    // {CM,HC,[CC0:CC5]} = {0,0,000000}
     tlc592x_buf[2*i] = 0x00;
-    tlc592x_buf[2*i + 1] = 0x40;
+    tlc592x_buf[2*i + 1] = 0x00;
   }
-  HAL_SPI_Transmit_DMA(&hspi1, tlc592x_buf, sizeof(tlc592x_buf));
+  if (HAL_SPI_Transmit_DMA(&hspi1, tlc592x_buf, sizeof(tlc592x_buf)) != HAL_OK) {
+    Error_Handler();
+  }
   while (hspi1.State != HAL_SPI_STATE_READY) { }
+
   TLC592x_Switch_To_Normal_Mode();
 
   HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
+}
+
+static void Require_ublox(uint16_t timeout_ticks)
+{
+  uint32_t tickstart = HAL_GetTick();
+  while (HAL_GetTick() - tickstart < timeout_ticks) {
+    if (HAL_I2C_IsDeviceReady(&hi2c1, 0x42 << 1, 1, 10) == HAL_OK) {
+      return;
+    }
+  }
+  Error_Handler();
 }
 /* USER CODE END 0 */
 
@@ -124,20 +144,27 @@ int main(void)
   MX_TIM16_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-  SFE_UBLOX_GPS myGPS;
-  myGPS.begin(hi2c1);
-  // myGPS.enableDebugging(huart2);
-  // myGPS.getProtocolVersion();
-  myGPS.setI2COutput(COM_TYPE_UBX);
-  myGPS.saveConfiguration();
   Configure_TLC592x();
   HAL_Serial_Print p(huart2);
   p.println("\r\nReset");
+  Require_ublox(1000);
+  SFE_UBLOX_GPS myGPS;
+  myGPS.begin(hi2c1);
+  myGPS.disableUART();
+  myGPS.setI2COutput(COM_TYPE_UBX);
+  myGPS.setNavigationFrequency(10000);
+  myGPS.setAutoPVT(true);
+  myGPS.saveConfiguration();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
+    while (!ublox_data_available) {
+      __WFI();
+    }
+    ublox_data_available = 0;
+
     HAL_Serial_Print p(huart2);
     long latitude = myGPS.getLatitude();
     p.print("Lat: ");
@@ -176,7 +203,7 @@ int main(void)
     auto day_fraction = (int32_t)roundf(112*day_fraction_s.day_fraction);
     auto sunset_fraction = (int32_t)roundf(112*day_fraction_s.daylength_fraction);
 
-    float dimming = .8;
+    float dimming = 1;
     // Apply a bathtub-like curve to the output brightness
     if (day_fraction_s.day_fraction > day_fraction_s.daylength_fraction) {
       dimming = MIN_PWM_BRIGHTNESS + (dimming - MIN_PWM_BRIGHTNESS)*fmaxf(
@@ -214,8 +241,6 @@ int main(void)
     p.print("Sunset at day fraction: ");
     p.println(day_fraction_s.daylength_fraction);
     p.println();
-
-    HAL_Delay(1000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -495,6 +520,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(NUCLEO_LED_GPIO_Port, NUCLEO_LED_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin : PA0 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pin : TLC592x_LE_Pin */
   GPIO_InitStruct.Pin = TLC592x_LE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -509,9 +540,20 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(NUCLEO_LED_GPIO_Port, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == GPIO_PIN_0) {
+    ublox_data_available = 1;
+  }
+}
+
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   if (hspi->Instance == SPI1) {
