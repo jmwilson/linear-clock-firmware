@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-void TLC592x_Switch_To_Special_Mode(void);
-void TLC592x_Switch_To_Normal_Mode(void);
+void TLC5926_Switch_To_Special_Mode(void);
+void TLC5926_Switch_To_Normal_Mode(void);
 
 #ifdef __cplusplus
 }

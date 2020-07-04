@@ -40,7 +40,7 @@ Src/astronomy.c \
 Src/stm32g0xx_it.c \
 Src/stm32g0xx_hal_msp.c \
 Src/system_stm32g0xx.c \
-Src/tlc592x.c \
+Src/tlc5926.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_gpio.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_i2c.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_i2c_ex.c \

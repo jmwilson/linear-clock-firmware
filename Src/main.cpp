@@ -28,7 +28,7 @@
 #include "SparkFun_Ublox_Arduino_Library.h"
 #include "HAL_Serial_Print.h"
 #include "astronomy.h"
-#include "tlc592x.h"
+#include "tlc5926.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -79,9 +79,9 @@ static void MX_SPI1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static void Configure_TLC592x()
+static void Configure_TLC5926()
 {
-  TLC592x_Switch_To_Special_Mode();
+  TLC5926_Switch_To_Special_Mode();
 
   for (int8_t i = 0; i < NUM_TLC592x; i++) {
     // {CM,HC,[CC0:CC5]} = {0,0,000000}
@@ -93,7 +93,7 @@ static void Configure_TLC592x()
   }
   while (hspi1.State != HAL_SPI_STATE_READY) { }
 
-  TLC592x_Switch_To_Normal_Mode();
+  TLC5926_Switch_To_Normal_Mode();
 
   HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
 }
@@ -144,7 +144,7 @@ int main(void)
   MX_TIM16_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-  Configure_TLC592x();
+  Configure_TLC5926();
   HAL_Serial_Print p(huart2);
   p.println("\r\nReset");
   Require_ublox(1000);
@@ -152,7 +152,7 @@ int main(void)
   myGPS.begin(hi2c1);
   myGPS.disableUART();
   myGPS.setI2COutput(COM_TYPE_UBX);
-  myGPS.setNavigationFrequency(10000);
+  myGPS.setNavigationFrequency(1000, 10);
   myGPS.setAutoPVT(true);
   myGPS.saveConfiguration();
   /* USER CODE END 2 */
@@ -161,7 +161,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1) {
     while (!ublox_data_available) {
-      __WFI();
+      HAL_SuspendTick();
+      __WFE();
+      HAL_ResumeTick();
     }
     ublox_data_available = 0;
 
@@ -551,6 +553,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == GPIO_PIN_0) {
     ublox_data_available = 1;
+    __SEV();
   }
 }
 

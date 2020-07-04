@@ -2221,12 +2221,12 @@ bool SFE_UBLOX_GPS::setSPIOutput(uint8_t comSettings, uint16_t maxWait)
 //Set the rate at which the module will give us an updated navigation solution
 //Expects a number that is the updates per second. For example 1 = 1Hz, 2 = 2Hz, etc.
 //Max is 40Hz(?!)
-bool SFE_UBLOX_GPS::setNavigationFrequency(uint16_t navFreq, uint16_t maxWait)
+bool SFE_UBLOX_GPS::setNavigationFrequency(uint16_t measurementRate, uint16_t navRate, uint16_t maxWait)
 {
   //if(updateRate > 40) updateRate = 40; //Not needed: module will correct out of bounds values
 
   //Adjust the I2C polling timeout based on update rate
-  i2cPollingWait = navFreq / 4; //This is the number of ms to wait between checks for new I2C data
+  i2cPollingWait = 0;
 
   //Query the module for the latest lat/long
   packetCfg.cls = UBX_CLASS_CFG;
@@ -2238,11 +2238,12 @@ bool SFE_UBLOX_GPS::setNavigationFrequency(uint16_t navFreq, uint16_t maxWait)
   if (sendCommand(&packetCfg, maxWait) != SFE_UBLOX_STATUS_DATA_RECEIVED) // We are expecting data and an ACK
     return (false);                                                       //If command send fails then bail
 
-  uint16_t measurementRate = navFreq;
-
   //payloadCfg is now loaded with current bytes. Change only the ones we need to
   payloadCfg[0] = measurementRate & 0xFF; //measRate LSB
   payloadCfg[1] = measurementRate >> 8;   //measRate MSB
+
+  payloadCfg[2] = navRate & 0xFF;
+  payloadCfg[3] = navRate >> 8;
 
   return ((sendCommand(&packetCfg, maxWait)) == SFE_UBLOX_STATUS_DATA_SENT); // We are only expecting an ACK
 }
@@ -2326,16 +2327,18 @@ bool SFE_UBLOX_GPS::getMessageConfiguration(uint8_t msgClass, uint8_t msgID, uin
   if (sendCommand(&packetCfg, maxWait) != SFE_UBLOX_STATUS_DATA_RECEIVED) // We are expecting data and an ACK
     return (false);                                                       //If command send fails then bail
 
-  _debugSerial->print(F("CLS  "));
-  _debugSerial->print(msgClass);
-  _debugSerial->print(F(" MSG "));
-  _debugSerial->print(msgID);
-  _debugSerial->print(F(" Rate:"));
-  for (int8_t i = 0; i < 6; i++) {
-    _debugSerial->print(F(" "));
-    _debugSerial->print(payloadCfg[2 + i]);
+  if (_printDebug) {
+    _debugSerial->print(F("CLS  "));
+    _debugSerial->print(msgClass);
+    _debugSerial->print(F(" MSG "));
+    _debugSerial->print(msgID);
+    _debugSerial->print(F(" Rate:"));
+    for (int8_t i = 0; i < 6; i++) {
+      _debugSerial->print(F(" "));
+      _debugSerial->print(payloadCfg[2 + i]);
+    }
+    _debugSerial->println();
   }
-  _debugSerial->println();
   return true;
 }
 

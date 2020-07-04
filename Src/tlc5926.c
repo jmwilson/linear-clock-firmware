@@ -1,9 +1,9 @@
 #include <stdbool.h>
 
 #include "main.h"
-#include "tlc592x.h"
+#include "tlc5926.h"
 
-static void TLC592x_Mode_Switch(bool special) {
+static void TLC5926_Mode_Switch(bool special) {
   uint32_t bsrr_frames[] = {
     (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
     (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | (TLC592x_OE_Pin << 16),
@@ -25,7 +25,7 @@ static void TLC592x_Mode_Switch(bool special) {
   GPIOA->BSRR = TLC592x_CLK_Pin << 16;
 }
 
-void TLC592x_Switch_To_Special_Mode(void)
+void TLC5926_Switch_To_Special_Mode(void)
 {
   // Reconfigute CLK and OE pins as GPIO
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -36,7 +36,7 @@ void TLC592x_Switch_To_Special_Mode(void)
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   // Bit-bang the mode-switching sequence
-  TLC592x_Mode_Switch(true);
+  TLC5926_Mode_Switch(true);
 
   // Restore CLK to peripheral, but leave OE in GPIO
   GPIO_InitStruct.Pin = TLC592x_CLK_Pin;
@@ -47,7 +47,7 @@ void TLC592x_Switch_To_Special_Mode(void)
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
-void TLC592x_Switch_To_Normal_Mode(void)
+void TLC5926_Switch_To_Normal_Mode(void)
 {
   // Reconfigute CLK and OE pins as GPIO
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -58,7 +58,7 @@ void TLC592x_Switch_To_Normal_Mode(void)
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   // Bit-bang the mode-switching sequence
-  TLC592x_Mode_Switch(false);
+  TLC5926_Mode_Switch(false);
 
   // Restore CLK and OE pins to peripherals
   GPIO_InitStruct.Pin = TLC592x_CLK_Pin;

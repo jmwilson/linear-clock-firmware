@@ -516,7 +516,7 @@ public:
 	void setSerialRate(uint32_t baudrate, uint8_t uartPort = COM_PORT_UART1, uint16_t maxTime = defaultMaxWait); //Changes the serial baud rate of the Ublox module, uartPort should be COM_PORT_UART1/2
 	void setNMEAOutputPort(UART_HandleTypeDef &nmeaOutputPort);																 //Sets the internal variable for the port to direct NMEA characters to
 
-	bool setNavigationFrequency(uint16_t navFreq, uint16_t maxWait = defaultMaxWait);	 //Set the number of nav solutions sent per second
+	bool setNavigationFrequency(uint16_t navFreq, uint16_t navRate, uint16_t maxWait = defaultMaxWait);	 //Set the number of nav solutions sent per second
 	uint8_t getNavigationFrequency(uint16_t maxWait = defaultMaxWait);					 //Get the number of nav solutions sent per second currently being output by module
 	bool saveConfiguration(uint16_t maxWait = defaultMaxWait);						 //Save current configuration to flash and BBR (battery backed RAM)
 	bool factoryDefault(uint16_t maxWait = defaultMaxWait);							 //Reset module to factory defaults
