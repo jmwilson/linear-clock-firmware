@@ -41,6 +41,7 @@ Src/stm32g0xx_it.c \
 Src/stm32g0xx_hal_msp.c \
 Src/system_stm32g0xx.c \
 Src/tlc5926.c \
+Src/ublox.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_gpio.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_i2c.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_i2c_ex.c \
@@ -65,7 +66,6 @@ Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_spi_ex.c
 
 CXX_SOURCES = \
 Src/main.cpp \
-SparkFun_Ublox_Arduino_Library/src/SparkFun_Ublox_Arduino_Library.cpp \
 SparkFun_Ublox_Arduino_Library/src/HAL_Serial_Print.cpp
 
 # ASM sources

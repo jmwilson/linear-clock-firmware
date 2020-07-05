@@ -25,10 +25,10 @@
 /* USER CODE BEGIN Includes */
 #include <cmath>
 #include <cstring>
-#include "SparkFun_Ublox_Arduino_Library.h"
 #include "HAL_Serial_Print.h"
 #include "astronomy.h"
 #include "tlc5926.h"
+#include "ublox.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,6 +48,8 @@
 #define NUM_TLC592x 14
 #define TLC592x_BUF_SIZE (2*NUM_TLC592x)
 
+#define NUM_LED 112
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -63,6 +65,7 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 static uint8_t tlc592x_buf[TLC592x_BUF_SIZE];
 static uint8_t ublox_data_available = 0;
+static uint8_t ackCount = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -108,6 +111,283 @@ static void Require_ublox(uint16_t timeout_ticks)
   }
   Error_Handler();
 }
+
+static void Expect_ACK_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length)
+{
+  if (cls != UBX_ACK || id != UBX_ACK_ACK) {
+    return;
+  }
+  ++ackCount;
+}
+
+static void Wait_For_Ublox_ACK(uint32_t timeout)
+{
+  // Clear ACK counter
+  ackCount = 0;
+  uint32_t tickstart = HAL_GetTick();
+
+  while (!ackCount && HAL_GetTick() - tickstart < timeout) {
+    UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Expect_ACK_Callback, 100);
+    HAL_Delay(10);  // Don't hammer the bus
+  }
+  if (!ackCount) {
+    Error_Handler();
+  }
+}
+
+static void UBX_Disable_UART(void)
+{
+  uint8_t packet[] = {
+    UBLOX_SYNC_1,
+    UBLOX_SYNC_2,
+    UBX_CFG,
+    UBX_CFG_PRT,
+    0, 0, // space for length
+
+    UBX_PORT_UART1, // Port ID
+    0, // reserved
+    0,  0, // txReady
+    0xc0, 0x80, 0, 0, // mode: 8N1
+    0x00, 0xc2, 0x01, 0, // baud rate: 115200
+    0, 0, // inProtoMask: disable all
+    0, 0, // outProtoMask: disable all
+    0, 0, // flags
+    0, 0, // reserved
+
+    0, 0, // space for checksum
+  };
+  UBX_Set_Size_And_Checksum(packet, sizeof(packet));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet, sizeof(packet), 100) != HAL_OK) {
+    Error_Handler();
+  }
+  Wait_For_Ublox_ACK(1000);
+}
+
+static void UBX_Configure_Navigation(void)
+{
+  uint8_t packet_rate[] = {
+    UBLOX_SYNC_1,
+    UBLOX_SYNC_2,
+    UBX_CFG,
+    UBX_CFG_RATE,
+    0, 0, // space for length
+
+    0xe8, 0x03, // measRate: 1000 ms
+    10, 0, // navRate: 10
+    0, 0, // timeRef: aligned to UTC
+
+    0, 0, // space for checksum
+  };
+  UBX_Set_Size_And_Checksum(packet_rate, sizeof(packet_rate));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet_rate, sizeof(packet_rate), 100) != HAL_OK) {
+    Error_Handler();
+  }
+  Wait_For_Ublox_ACK(1000);
+
+  uint8_t packet_msg[] = {
+    UBLOX_SYNC_1,
+    UBLOX_SYNC_2,
+    UBX_CFG,
+    UBX_CFG_MSG,
+    0, 0, // space for length
+
+    UBX_NAV, // msgClass
+    UBX_NAV_PVT, // msgID
+    1, // rate
+
+    0, 0, // space for checksum
+  };
+  UBX_Set_Size_And_Checksum(packet_msg, sizeof(packet_msg));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet_msg, sizeof(packet_msg), 100) != HAL_OK) {
+    Error_Handler();
+  }
+  Wait_For_Ublox_ACK(1000);
+}
+
+static void UBX_Configure_I2C(void)
+{
+  uint8_t packet[] = {
+    UBLOX_SYNC_1,
+    UBLOX_SYNC_2,
+    UBX_CFG,
+    UBX_CFG_PRT,
+    0, 0, // space for length
+
+    UBX_PORT_I2C, // Port ID
+    0, // reserved
+    (6 << 2) | 1,  0, // txReady: enabled, PIO 6 (TX), active high, zero threshold
+    UBLOX_I2C_ADDRESS << 1, 0, 0, 0, // mode: 0x42 slave address
+    0, 0, 0, 0, // reserved
+    1, 0, // inProtoMask: UBX only
+    1, 0, // outProtoMask: UBX only
+    0, 0, // flags
+    0, 0, // reserved
+
+    0, 0, // space for checksum
+  };
+  UBX_Set_Size_And_Checksum(packet, sizeof(packet));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet, sizeof(packet), 100) != HAL_OK) {
+    Error_Handler();
+  }
+  Wait_For_Ublox_ACK(1000);
+}
+
+static void UBX_Save_Configuration(void)
+{
+  uint8_t packet[] = {
+    UBLOX_SYNC_1,
+    UBLOX_SYNC_2,
+    UBX_CFG,
+    UBX_CFG_CFG,
+    0, 0, // space for length
+
+    0, 0, 0, 0, // clearMask,
+    0x1f, 0x1f, 0, 0, // saveMask
+    0, 0, 0, 0, // loadMask
+
+    0, 0, // space for checksum
+  };
+  UBX_Set_Size_And_Checksum(packet, sizeof(packet));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet, sizeof(packet), 100) != HAL_OK) {
+    Error_Handler();
+  }
+  Wait_For_Ublox_ACK(1000);
+}
+
+static void UBX_Print_Version_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length)
+{
+  if (cls != UBX_MON || id != UBX_MON_VER) {
+    return;
+  }
+
+  HAL_Serial_Print p(huart2);
+  p.print("u-blox HW version ");
+  p.println((const char *)(payload + 30));
+  p.print("u-blox SW version ");
+  p.println((const char *)payload);
+  p.println("u-blox extension strings:");
+  for (uint16_t offset = 40; offset < length; offset += 30) {
+    p.print("  ");
+    p.println((const char *)(payload + offset));
+  }
+  p.println();
+}
+
+static void UBX_Print_Version(void)
+{
+  uint8_t packet[] = {
+    UBLOX_SYNC_1,
+    UBLOX_SYNC_2,
+    UBX_MON,
+    UBX_MON_VER,
+    0, 0, // space for length
+    0, 0, // space for checksum
+  };
+  UBX_Set_Size_And_Checksum(packet, sizeof(packet));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet, sizeof(packet), 100) != HAL_OK) {
+    Error_Handler();
+  }
+
+  uint32_t tickstart = HAL_GetTick();
+  while (HAL_GetTick() - tickstart < 1000) {
+    UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, UBX_Print_Version_Callback, 100);
+    HAL_Delay(10);
+  }
+}
+
+static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length)
+{
+  if (cls != UBX_NAV || id != UBX_NAV_PVT) {
+    return;
+  }
+
+  HAL_Serial_Print p(huart2);
+
+  uint16_t year = readU2(payload, 4);
+  uint8_t month = payload[6];
+  uint8_t day = payload[7];
+  uint8_t hour = payload[8];
+  uint8_t min = payload[9];
+  uint8_t sec = payload[10];
+  uint8_t valid = payload[11];
+  uint8_t fixType = payload[20];
+  uint8_t flags = payload[21];
+  uint8_t numSV = payload[23];
+  int32_t lon = readU4(payload, 24);
+  int32_t lat = readU4(payload, 28);
+  int32_t alt = readU4(payload, 36);
+
+  auto gnssFixOK = flags & 1;
+  if (!gnssFixOK) {
+    p.println("Waiting for GPS fix...");
+    return;
+  }
+
+  p.print("Lat: ");
+  p.print(lat);
+  p.println(" (degrees * 10^-7)");
+
+  p.print("Long: ");
+  p.print(lon);
+  p.println(" (degrees * 10^-7)");
+
+  p.print("Alt: ");
+  p.print(alt);
+  p.println(" (mm)");
+
+  p.print("SIV: ");
+  p.println(numSV);
+
+  p.print("Time: ");
+  p.print(year); p.print("-"); p.print(month); p.print("-"); p.print(day);
+  p.print(" ");
+  p.print(hour); p.print(":"); p.print(min); p.print(":"); p.println(sec);
+
+  auto jd = julian_date(year, month, day, hour, min, sec);
+  auto day_fraction_s = compute_day_fraction(lat * 1e-7f, lon * 1e-7f, jd);
+
+  int32_t day_fraction = roundf(NUM_LED*day_fraction_s.day_fraction);
+  int32_t sunset_fraction = roundf(NUM_LED*day_fraction_s.daylength_fraction);
+
+  float dimming = 1;
+  // Apply a bathtub-like curve to the output brightness
+  if (day_fraction_s.day_fraction > day_fraction_s.daylength_fraction) {
+    dimming = MIN_PWM_BRIGHTNESS + (dimming - MIN_PWM_BRIGHTNESS)*fmaxf(
+      expf((day_fraction_s.daylength_fraction
+        - day_fraction_s.day_fraction)/BRIGHTNESS_TAU),
+      expf((day_fraction_s.day_fraction - 1)/BRIGHTNESS_TAU)
+    );
+  }
+  htim16.Instance->CCR1 = (uint16_t)(1000*dimming);
+
+  // Set bit sunset_fraction in the stream of bits
+  for (uint8_t b = 0; b < 14; b++) {
+    if (NUM_LED - 8*(b + 1) <= sunset_fraction && sunset_fraction < NUM_LED - 8*b) {
+      tlc592x_buf[b] = (uint8_t)(1 << (NUM_LED - sunset_fraction - 8*b));
+    } else {
+      tlc592x_buf[b] = 0;
+    }
+  }
+
+  // Set day_fraction bits high starting from the left
+  for (uint8_t b = 0; b < 14; b++) {
+    if (day_fraction >= NUM_LED - 8*b) {
+      tlc592x_buf[14 + b] = 0xff;
+    } else if (day_fraction < NUM_LED - 8*(b + 1)) {
+      tlc592x_buf[14 + b] = 0x00;
+    } else {
+      tlc592x_buf[14 + b] = (uint8_t)(0xff << (NUM_LED - day_fraction - 8*b));
+    }
+  }
+  HAL_SPI_Transmit_DMA(&hspi1, tlc592x_buf, sizeof(tlc592x_buf));
+
+  p.print("Day fraction: ");
+  p.println(day_fraction_s.day_fraction);
+
+  p.print("Sunset at day fraction: ");
+  p.println(day_fraction_s.daylength_fraction);
+  p.println();
+}
 /* USER CODE END 0 */
 
 /**
@@ -146,15 +426,13 @@ int main(void)
   /* USER CODE BEGIN 2 */
   Configure_TLC5926();
   HAL_Serial_Print p(huart2);
-  p.println("\r\nReset");
+  p.println("\r\nDevice Reset");
   Require_ublox(1000);
-  SFE_UBLOX_GPS myGPS;
-  myGPS.begin(hi2c1);
-  myGPS.disableUART();
-  myGPS.setI2COutput(COM_TYPE_UBX);
-  myGPS.setNavigationFrequency(1000, 10);
-  myGPS.setAutoPVT(true);
-  myGPS.saveConfiguration();
+  UBX_Disable_UART();
+  UBX_Configure_I2C();
+  UBX_Configure_Navigation();
+  UBX_Save_Configuration();
+  UBX_Print_Version();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -166,83 +444,7 @@ int main(void)
       HAL_ResumeTick();
     }
     ublox_data_available = 0;
-
-    HAL_Serial_Print p(huart2);
-    long latitude = myGPS.getLatitude();
-    p.print("Lat: ");
-    p.print(latitude);
-    p.println(" (degrees * 10^-7)");
-
-    long longitude = myGPS.getLongitude();
-    p.print("Long: ");
-    p.print(longitude);
-    p.println(" (degrees * 10^-7)");
-
-    long altitude = myGPS.getAltitudeMSL();
-    p.print("Alt: ");
-    p.print(altitude);
-    p.println(" (mm)");
-
-    uint8_t SIV = myGPS.getSIV();
-    p.print("SIV: ");
-    p.println(SIV);
-
-    auto year = myGPS.getYear();
-    auto month = myGPS.getMonth();
-    auto day = myGPS.getDay();
-    auto hour = myGPS.getHour();
-    auto minute = myGPS.getMinute();
-    auto second = myGPS.getSecond();
-
-    p.print("Time: ");
-    p.print(year); p.print("-"); p.print(month); p.print("-"); p.print(day);
-    p.print(" ");
-    p.print(hour); p.print(":"); p.print(minute); p.print(":"); p.println(second);
-
-    auto jd = julian_date(year, month, day, hour, minute, second);
-    auto day_fraction_s = compute_day_fraction(latitude * 1e-7f, longitude * 1e-7f, jd);
-
-    auto day_fraction = (int32_t)roundf(112*day_fraction_s.day_fraction);
-    auto sunset_fraction = (int32_t)roundf(112*day_fraction_s.daylength_fraction);
-
-    float dimming = 1;
-    // Apply a bathtub-like curve to the output brightness
-    if (day_fraction_s.day_fraction > day_fraction_s.daylength_fraction) {
-      dimming = MIN_PWM_BRIGHTNESS + (dimming - MIN_PWM_BRIGHTNESS)*fmaxf(
-        expf((day_fraction_s.daylength_fraction
-          - day_fraction_s.day_fraction)/BRIGHTNESS_TAU),
-        expf((day_fraction_s.day_fraction - 1)/BRIGHTNESS_TAU)
-      );
-    }
-    htim16.Instance->CCR1 = (uint16_t)(1000*dimming);
-
-    // Set bit sunset_fraction in the stream of bits
-    for (uint8_t b = 0; b < 14; b++) {
-      if (112 - 8*(b + 1) <= sunset_fraction && sunset_fraction < 112 - 8*b) {
-        tlc592x_buf[b] = (uint8_t)(1 << (112 - sunset_fraction - 8*b));
-      } else {
-        tlc592x_buf[b] = 0;
-      }
-    }
-
-    // Set day_fraction bits high starting from the left
-    for (uint8_t b = 0; b < 14; b++) {
-      if (day_fraction >= 112 - 8*b) {
-        tlc592x_buf[14 + b] = 0xff;
-      } else if (day_fraction < 112 - 8*(b + 1)) {
-        tlc592x_buf[14 + b] = 0x00;
-      } else {
-        tlc592x_buf[14 + b] = (uint8_t)(0xff << (112 - day_fraction - 8*b));
-      }
-    }
-    HAL_SPI_Transmit_DMA(&hspi1, tlc592x_buf, sizeof(tlc592x_buf));
-
-    p.print("Day fraction: ");
-    p.println(day_fraction_s.day_fraction);
-
-    p.print("Sunset at day fraction: ");
-    p.println(day_fraction_s.daylength_fraction);
-    p.println();
+    UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Navigation_Callback, 100);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
