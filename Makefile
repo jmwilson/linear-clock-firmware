@@ -188,7 +188,8 @@ $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
 	$(AS) -c $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
-	$(CXX) $(OBJECTS) $(LDFLAGS) -o $@
+	$(CC) -c $(CFLAGS) -o $(BUILD_DIR)/build_info.o Src/build_info.c
+	$(CXX) $(OBJECTS) $(BUILD_DIR)/build_info.o $(LDFLAGS) -o $@
 	$(SZ) $@
 
 $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf | $(BUILD_DIR)

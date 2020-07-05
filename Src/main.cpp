@@ -68,6 +68,7 @@ static uint8_t ubloxDataAvailable = 0;
 static uint8_t ackCount = 0;
 
 extern volatile const uint64_t _configBytes;
+extern const char *BUILD_TIME;
 
 /* USER CODE END PV */
 
@@ -340,6 +341,11 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
 
   auto gnssFixOK = flags & 1;
   if (!gnssFixOK) {
+    memset(tlc592xBuf, 0, sizeof(tlc592xBuf));
+    tlc592xBuf[7] = 1;
+    tlc592xBuf[21] = 1;
+    HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
+    htim16.Instance->CCR1 = 1000;
     p.println("Waiting for GPS fix...");
     return;
   }
@@ -449,7 +455,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
   Configure_TLC5926();
   HAL_Serial_Print p(huart2);
-  p.println("\r\nDevice Reset");
+  p.print("\r\nDevice Reset (build ");
+  p.print(BUILD_TIME);
+  p.println(")");
   Require_ublox(1000);
   if ((_configBytes & 1) == 1) {
     UBX_Disable_UART();
