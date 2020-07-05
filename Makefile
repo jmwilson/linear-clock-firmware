@@ -201,7 +201,7 @@ $(BUILD_DIR):
 	mkdir $@
 
 flash: $(BUILD_DIR)/$(TARGET).hex
-	openocd -f st_nucleo_g0.cfg -c "program $< verify reset exit"
+	openocd -f st_nucleo_g0.cfg -c "init; halt; stm32g0x mass_erase 0; program $< verify reset exit"
 
 #######################################
 # clean up

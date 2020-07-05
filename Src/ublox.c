@@ -6,61 +6,62 @@
 #define I2C_RECEIVE_BUFFER_SIZE 64
 #define PAYLOAD_BUFFER_SIZE 256
 
-static uint32_t readI2C(I2C_HandleTypeDef *hi2c, uint16_t device_address, uint32_t timeout, uint8_t *buf, uint16_t size, bool sendStop)
+static uint32_t readI2C(
+  I2C_HandleTypeDef *hi2c, uint16_t device_address, uint32_t timeout,
+  uint8_t *buf, uint16_t size, bool sendStop)
 {
   uint32_t tickstart = HAL_GetTick();
   uint32_t delta = 0;
-  uint32_t xferOptions = sendStop ? I2C_OTHER_AND_LAST_FRAME : I2C_OTHER_FRAME;
+  uint32_t xferOptions =
+    sendStop ? I2C_OTHER_AND_LAST_FRAME : I2C_OTHER_FRAME;
 
-  while (HAL_I2C_Master_Seq_Receive_IT(hi2c, device_address << 1, buf, size, xferOptions) != HAL_OK
-         && delta < timeout)
-  {
-    delta = (HAL_GetTick() - tickstart);
+  while (
+    HAL_I2C_Master_Seq_Receive_IT(
+      hi2c, device_address << 1, buf, size, xferOptions) != HAL_OK
+    && delta < timeout
+  ) {
+    delta = HAL_GetTick() - tickstart;
   }
-  if (delta >= timeout)
-  {
+  if (delta >= timeout) {
     return HAL_I2C_ERROR_TIMEOUT;
   }
-  while ((HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY) && (delta < timeout))
-  {
-    delta = (HAL_GetTick() - tickstart);
-    if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_NONE)
-    {
+  while ((HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY) && (delta < timeout)) {
+    delta = HAL_GetTick() - tickstart;
+    if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_NONE) {
       break;
     }
   }
-  if (delta >= timeout)
-  {
+  if (delta >= timeout) {
     return HAL_I2C_ERROR_TIMEOUT;
   }
   return HAL_I2C_GetError(hi2c);
 }
 
-static uint32_t writeI2C(I2C_HandleTypeDef *hi2c, uint16_t device_address, uint32_t timeout, uint8_t *buf, uint16_t size, bool sendStop)
+static uint32_t writeI2C(
+  I2C_HandleTypeDef *hi2c, uint16_t device_address, uint32_t timeout,
+  uint8_t *buf, uint16_t size, bool sendStop)
 {
   uint32_t tickstart = HAL_GetTick();
   uint32_t delta = 0;
   uint32_t xferOptions = sendStop ? I2C_OTHER_AND_LAST_FRAME : I2C_OTHER_FRAME;
 
-  while (HAL_I2C_Master_Seq_Transmit_IT(hi2c, device_address << 1, buf, size, xferOptions) != HAL_OK
-         && delta < timeout)
-  {
-    delta = (HAL_GetTick() - tickstart);
+  while (
+    HAL_I2C_Master_Seq_Transmit_IT(
+      hi2c, device_address << 1, buf, size, xferOptions) != HAL_OK
+    && delta < timeout
+  ) {
+    delta = HAL_GetTick() - tickstart;
   }
-  if (delta >= timeout)
-  {
+  if (delta >= timeout) {
     return HAL_I2C_ERROR_TIMEOUT;
   }
-  while ((HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY) && (delta < timeout))
-  {
-    delta = (HAL_GetTick() - tickstart);
-    if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_NONE)
-    {
+  while (HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY && delta < timeout) {
+    delta = HAL_GetTick() - tickstart;
+    if (HAL_I2C_GetError(hi2c) != HAL_I2C_ERROR_NONE) {
       break;
     }
   }
-  if (delta >= timeout)
-  {
+  if (delta >= timeout) {
     return HAL_I2C_ERROR_TIMEOUT;
   }
   return HAL_I2C_GetError(hi2c);
@@ -89,13 +90,17 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
   uint8_t receive_buffer[I2C_RECEIVE_BUFFER_SIZE];
   uint8_t payload_buffer[PAYLOAD_BUFFER_SIZE];
 
-  uint16_t bytesAvailable = 0;
+  uint16_t bytes_available = 0;
   uint8_t reg = 0xFD;
-  if (writeI2C(hi2c, device_address, timeout, &reg, 1, false) != HAL_I2C_ERROR_NONE) {
+  if (writeI2C(hi2c, device_address, timeout,
+      &reg, 1, false) != HAL_I2C_ERROR_NONE
+  ) {
     return;
   }
-  if (readI2C(hi2c, device_address, timeout, receive_buffer, 2, true) == HAL_I2C_ERROR_NONE) {
-    bytesAvailable = receive_buffer[1] | ((uint16_t)receive_buffer[0] << 8);
+  if (readI2C(hi2c, device_address, timeout,
+      receive_buffer, 2, true) == HAL_I2C_ERROR_NONE
+  ) {
+    bytes_available = receive_buffer[1] | ((uint16_t)receive_buffer[0] << 8);
   }
 
   UBX_Receive_State state = UBX_SYNC_1;
@@ -110,17 +115,19 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
   uint8_t packet_chkB;
   uint16_t payload_length;
 
-  while (bytesAvailable) {
-    uint16_t bytesToRead = bytesAvailable;
-    if (bytesToRead > I2C_RECEIVE_BUFFER_SIZE) {
-      bytesToRead = I2C_RECEIVE_BUFFER_SIZE;
+  while (bytes_available) {
+    uint16_t bytes_read = bytes_available;
+    if (bytes_read > I2C_RECEIVE_BUFFER_SIZE) {
+      bytes_read = I2C_RECEIVE_BUFFER_SIZE;
     }
 
-    if (readI2C(hi2c, device_address, timeout, receive_buffer, bytesToRead, true) != HAL_I2C_ERROR_NONE) {
+    if (readI2C(hi2c, device_address, timeout,
+        receive_buffer, bytes_read, true) != HAL_I2C_ERROR_NONE
+    ) {
       return;
     }
 
-    for(uint8_t i = 0; i < bytesToRead; ++i) {
+    for(uint8_t i = 0; i < bytes_read; ++i) {
       const uint8_t b = receive_buffer[i];
       switch (state) {
         case UBX_SYNC_1:
@@ -200,6 +207,6 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
         chkB = 0;
       }
     }
-    bytesAvailable -= bytesToRead;
+    bytes_available -= bytes_read;
   }
 }
