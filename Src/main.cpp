@@ -48,6 +48,8 @@
 #define NUM_TLC592x 14
 #define TLC592x_BUF_SIZE (2*NUM_TLC592x)
 
+#define MAX_MISSED_FIX_COUNT 30 // * 10 seconds = 5 minutes w/o GPS fix
+
 #define NUM_LED 112
 
 /* USER CODE END PM */
@@ -67,8 +69,11 @@ static uint8_t tlc592xBuf[TLC592x_BUF_SIZE];
 static uint8_t ubloxDataAvailable = 0;
 static uint8_t ackCount = 0;
 
+static bool lostFix = true;
+static uint32_t missedFixCount = 0;
+
 extern volatile const uint64_t _configBytes;
-extern const char *BUILD_TIME;
+extern const char *BUILD_STRING;
 
 /* USER CODE END PV */
 
@@ -91,9 +96,9 @@ static void Configure_TLC5926()
   TLC5926_Switch_To_Special_Mode();
 
   for (int8_t i = 0; i < NUM_TLC592x; i++) {
-    // {CM,HC,[CC0:CC5]} = {0,0,000000}
+    // {CM,HC,[CC0:CC5]} = {0,1,000000}
     tlc592xBuf[2*i] = 0x00;
-    tlc592xBuf[2*i + 1] = 0x00;
+    tlc592xBuf[2*i + 1] = 0x40;
   }
   if (HAL_SPI_Transmit_DMA(
       &hspi1, tlc592xBuf, sizeof(tlc592xBuf)) != HAL_OK
@@ -153,13 +158,13 @@ static void UBX_Disable_UART(void)
 
     UBX_PORT_UART1, // Port ID
     0, // reserved
-    0,  0, // txReady
-    0xc0, 0x80, 0, 0, // mode: 8N1
-    0x00, 0xc2, 0x01, 0, // baud rate: 115200
-    0, 0, // inProtoMask: disable all
-    0, 0, // outProtoMask: disable all
-    0, 0, // flags
-    0, 0, // reserved
+    UBX_INT16(0), // txReady
+    UBX_INT32(0x80c0),  // mode: 8N1
+    UBX_INT32(115200),  // baud rate: 115200
+    UBX_INT16(0), // inProtoMask: disable all
+    UBX_INT16(0), // outProtoMask: disable all
+    UBX_INT16(0), // flags
+    UBX_INT16(0), // reserved
 
     0, 0, // space for checksum
   };
@@ -181,9 +186,9 @@ static void UBX_Configure_Navigation(void)
     UBX_CFG_RATE,
     0, 0, // space for length
 
-    0xe8, 0x03, // measRate: 1000 ms
-    10, 0, // navRate: 10
-    0, 0, // timeRef: aligned to UTC
+    UBX_INT16(1000), // measRate: 1000 ms
+    UBX_INT16(10), // navRate: 10
+    UBX_INT16(0), // timeRef: aligned to UTC
 
     0, 0, // space for checksum
   };
@@ -230,13 +235,14 @@ static void UBX_Configure_I2C(void)
 
     UBX_PORT_I2C, // Port ID
     0, // reserved
-    (6 << 2) | 1,  0, // txReady: enabled, PIO 6 (TX), active high, zero threshold
-    UBLOX_I2C_ADDRESS << 1, 0, 0, 0, // mode: 0x42 slave address
-    0, 0, 0, 0, // reserved
-    1, 0, // inProtoMask: UBX only
-    1, 0, // outProtoMask: UBX only
-    0, 0, // flags
-    0, 0, // reserved
+    UBX_INT16((6 << 2) | 1), // txReady: enabled, PIO 6 (TX),
+                             // active high, zero threshold
+    UBX_INT32(UBLOX_I2C_ADDRESS << 1), // mode: 0x42 slave address
+    UBX_INT32(0), // reserved
+    UBX_INT16(1), // inProtoMask: UBX only
+    UBX_INT16(1), // outProtoMask: UBX only
+    UBX_INT16(0), // flags
+    UBX_INT16(0), // reserved
 
     0, 0, // space for checksum
   };
@@ -258,9 +264,9 @@ static void UBX_Save_Configuration(void)
     UBX_CFG_CFG,
     0, 0, // space for length
 
-    0, 0, 0, 0, // clearMask,
-    0x1f, 0x1f, 0, 0, // saveMask
-    0, 0, 0, 0, // loadMask
+    UBX_INT32(0),  // clearMask
+    UBX_INT32(0x1f1f),  // saveMask: all
+    UBX_INT32(0), // loadMask
 
     0, 0, // space for checksum
   };
@@ -331,8 +337,6 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   uint8_t hour = payload[8];
   uint8_t min = payload[9];
   uint8_t sec = payload[10];
-  uint8_t valid = payload[11];
-  uint8_t fixType = payload[20];
   uint8_t flags = payload[21];
   uint8_t numSV = payload[23];
   int32_t lon = readU4(payload, 24);
@@ -340,13 +344,21 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   int32_t alt = readU4(payload, 36);
 
   auto gnssFixOK = flags & 1;
-  if (!gnssFixOK) {
-    memset(tlc592xBuf, 0, sizeof(tlc592xBuf));
-    tlc592xBuf[7] = 1;
-    tlc592xBuf[21] = 1;
-    HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
-    htim16.Instance->CCR1 = 1000;
+  if (gnssFixOK) {
+    lostFix = false;
+    missedFixCount = 0;
+  } else {
     p.println("Waiting for GPS fix...");
+    if (++missedFixCount >= MAX_MISSED_FIX_COUNT) {
+      lostFix = true;
+    }
+    if (lostFix) {
+      memset(tlc592xBuf, 0, sizeof(tlc592xBuf));
+      tlc592xBuf[7] = 1;
+      tlc592xBuf[21] = 1;
+      HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
+      htim16.Instance->CCR1 = 100;
+    }
     return;
   }
 
@@ -456,7 +468,7 @@ int main(void)
   Configure_TLC5926();
   HAL_Serial_Print p(huart2);
   p.print("\r\nDevice Reset (build ");
-  p.print(BUILD_TIME);
+  p.print(BUILD_STRING);
   p.println(")");
   Require_ublox(1000);
   if ((_configBytes & 1) == 1) {

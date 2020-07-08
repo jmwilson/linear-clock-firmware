@@ -29,6 +29,9 @@
 
 #define UBLOX_I2C_ADDRESS 0x42
 
+#define UBX_INT16(x) (x) & 0xff, ((x) >> 8) & 0xff
+#define UBX_INT32(x) (x) & 0xff, ((x) >> 8) & 0xff, ((x) >> 16) & 0xff, ((x) >> 24) & 0xff
+
 typedef enum {
     UBX_SYNC_1,
     UBX_SYNC_2,

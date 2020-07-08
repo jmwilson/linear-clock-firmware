@@ -105,7 +105,6 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
 
   UBX_Receive_State state = UBX_SYNC_1;
   uint16_t payload_pos = 0;
-  uint8_t sync_valid = 1;
   uint8_t chkA = 0;
   uint8_t chkB = 0;
 
@@ -131,16 +130,16 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
       const uint8_t b = receive_buffer[i];
       switch (state) {
         case UBX_SYNC_1:
-          if (b != UBLOX_SYNC_1) {
-            sync_valid = 0;
+          if (b == UBLOX_SYNC_1) {
+            state = UBX_SYNC_2;
           }
-          state = UBX_SYNC_2;
           break;
         case UBX_SYNC_2:
-          if (b != UBLOX_SYNC_2) {
-            sync_valid = 0;
+          if (b == UBLOX_SYNC_2) {
+            state = UBX_CLASS;
+          } else {
+            state = UBX_SYNC_1;
           }
-          state = UBX_CLASS;
           break;
         case UBX_CLASS:
           packet_class = b;
@@ -192,7 +191,7 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
           break;
         case UBX_CHECKSUM_B:
           packet_chkB = b;
-          if (sync_valid && chkA == packet_chkA && chkB == packet_chkB) {
+          if (chkA == packet_chkA && chkB == packet_chkB) {
             callback(packet_class, packet_id, payload_buffer, payload_length);
           }
           state = UBX_PACKET_COMPLETE;
@@ -202,7 +201,6 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
         // Reset frame
         state = UBX_SYNC_1;
         payload_pos = 0;
-        sync_valid = 1;
         chkA = 0;
         chkB = 0;
       }

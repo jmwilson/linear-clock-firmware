@@ -148,6 +148,7 @@ endif
 CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 
 CFLAGS += -Wdouble-promotion -Wfloat-conversion
+HG_RELEASE := $(shell hg id --tags)
 
 CXXFLAGS = $(CFLAGS)
 
@@ -188,7 +189,7 @@ $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
 	$(AS) -c $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
-	$(CC) -c $(CFLAGS) -o $(BUILD_DIR)/build_info.o Src/build_info.c
+	$(CC) -c $(CFLAGS) -D__RELEASE_TAG__=\"$(HG_RELEASE)\" -o $(BUILD_DIR)/build_info.o Src/build_info.c
 	$(CXX) $(OBJECTS) $(BUILD_DIR)/build_info.o $(LDFLAGS) -o $@
 	$(SZ) $@
 
