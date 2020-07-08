@@ -388,16 +388,16 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   int32_t day_fraction = roundf(NUM_LED*day_fraction_s.day_fraction);
   int32_t sunset_fraction = roundf(NUM_LED*day_fraction_s.daylength_fraction);
 
-  float dimming = 1;
   // Apply a bathtub-like curve to the output brightness
-  if (day_fraction_s.day_fraction > day_fraction_s.daylength_fraction) {
-    dimming = MIN_PWM_BRIGHTNESS + (dimming - MIN_PWM_BRIGHTNESS)*fmaxf(
-      expf((day_fraction_s.daylength_fraction
-        - day_fraction_s.day_fraction)/BRIGHTNESS_TAU),
-      expf((day_fraction_s.day_fraction - 1)/BRIGHTNESS_TAU)
-    );
-  }
-  htim16.Instance->CCR1 = (uint16_t)(1000*dimming);
+  auto dimming = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)*fmaxf(
+    fminf(
+      1/(1 + expf(-day_fraction_s.day_fraction/BRIGHTNESS_TAU)),
+      1/(1 + expf((day_fraction_s.day_fraction
+        - day_fraction_s.daylength_fraction)/BRIGHTNESS_TAU))
+    ),
+    1/(1 + expf(-(day_fraction_s.day_fraction - 1)/BRIGHTNESS_TAU))
+  );
+  htim16.Instance->CCR1 = roundf(1000*dimming);
 
   // Set bit sunset_fraction in the stream of bits
   for (uint8_t b = 0; b < 14; b++) {
