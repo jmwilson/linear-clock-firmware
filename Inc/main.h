@@ -66,10 +66,15 @@ void Error_Handler(void);
 #define TLC592x_OE_GPIO_Port GPIOA
 #define TLC592x_LE_Pin GPIO_PIN_7
 #define TLC592x_LE_GPIO_Port GPIOA
+#define SAFEBOOT_N_Pin GPIO_PIN_8
+#define SAFEBOOT_N_GPIO_Port GPIOA
 #define NUCLEO_LED_Pin GPIO_PIN_6
 #define NUCLEO_LED_GPIO_Port GPIOC
 #define TLC592x_SDI_Pin GPIO_PIN_12
 #define TLC592x_SDI_GPIO_Port GPIOA
+#define TX_READY_Pin GPIO_PIN_7
+#define TX_READY_GPIO_Port GPIOB
+#define TX_READY_EXTI_IRQn EXTI4_15_IRQn
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
