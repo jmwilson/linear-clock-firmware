@@ -66,7 +66,7 @@ Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_spi_ex.c
 
 CXX_SOURCES = \
 Src/main.cpp \
-SparkFun_Ublox_Arduino_Library/src/HAL_Serial_Print.cpp
+Src/Print.cpp
 
 # ASM sources
 ASM_SOURCES =  \
@@ -130,9 +130,7 @@ C_INCLUDES =  \
 -IDrivers/STM32G0xx_HAL_Driver/Inc/Legacy \
 -IDrivers/CMSIS/Device/ST/STM32G0xx/Include \
 -IDrivers/CMSIS/Include \
--IDrivers/CMSIS/Include \
--ISparkFun_Ublox_Arduino_Library/src
-
+-IDrivers/CMSIS/Include
 
 # compile gcc flags
 ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections

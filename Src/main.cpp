@@ -6,6 +6,7 @@
   ******************************************************************************
   * @attention
   *
+  * Copyright (c) 2020 James Wilson. All rights reserved.
   * <h2><center>&copy; Copyright (c) 2020 STMicroelectronics.
   * All rights reserved.</center></h2>
   *
@@ -25,7 +26,7 @@
 /* USER CODE BEGIN Includes */
 #include <cmath>
 #include <cstring>
-#include "HAL_Serial_Print.h"
+#include "Print.h"
 #include "astronomy.h"
 #include "tlc5926.h"
 #include "ublox.h"
@@ -71,6 +72,8 @@ static uint8_t ackCount = 0;
 
 static bool lostFix = true;
 static uint32_t missedFixCount = 0;
+
+const Print p(huart2);
 
 extern volatile const uint64_t _configBytes;
 extern const char *BUILD_STRING;
@@ -286,7 +289,6 @@ static void UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
     return;
   }
 
-  HAL_Serial_Print p(huart2);
   p.print("u-blox HW version ");
   p.println((const char *)(payload + 30));
   p.print("u-blox SW version ");
@@ -328,8 +330,6 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   if (cls != UBX_NAV || id != UBX_NAV_PVT) {
     return;
   }
-
-  HAL_Serial_Print p(huart2);
 
   uint16_t year = readU2(payload, 4);
   uint8_t month = payload[6];
@@ -466,7 +466,6 @@ int main(void)
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   Configure_TLC5926();
-  HAL_Serial_Print p(huart2);
   p.print("\r\nDevice Reset (build ");
   p.print(BUILD_STRING);
   p.println(")");
@@ -512,10 +511,10 @@ void SystemClock_Config(void)
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
-  /** Configure the main internal regulator output voltage 
+  /** Configure the main internal regulator output voltage
   */
   HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1);
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the CPU, AHB and APB busses clocks
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
@@ -532,7 +531,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  /** Initializes the CPU, AHB and APB busses clocks 
+  /** Initializes the CPU, AHB and APB busses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1;
@@ -544,7 +543,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  /** Initializes the peripherals clocks 
+  /** Initializes the peripherals clocks
   */
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_I2C1;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_PCLK1;
@@ -582,13 +581,13 @@ static void MX_I2C1_Init(void)
   {
     Error_Handler();
   }
-  /** Configure Analogue filter 
+  /** Configure Analogue filter
   */
   if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
   {
     Error_Handler();
   }
-  /** Configure Digital filter 
+  /** Configure Digital filter
   */
   if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
   {
@@ -739,10 +738,10 @@ static void MX_USART2_UART_Init(void)
 
 }
 
-/** 
+/**
   * Enable DMA controller clock
   */
-static void MX_DMA_Init(void) 
+static void MX_DMA_Init(void)
 {
 
   /* DMA controller clock enable */
@@ -859,7 +858,7 @@ void Error_Handler(void)
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
-{ 
+{
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
