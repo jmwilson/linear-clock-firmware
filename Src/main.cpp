@@ -291,13 +291,13 @@ static void UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
   }
 
   p.print("u-blox HW version ");
-  p.println((const char *)(payload + 30));
+  p.println(reinterpret_cast<const char *>(payload + 30));
   p.print("u-blox SW version ");
-  p.println((const char *)payload);
+  p.println(reinterpret_cast<const char *>(payload));
   p.println("u-blox extension strings:");
   for (uint16_t offset = 40; offset < length; offset += 30) {
     p.print("  ");
-    p.println((const char *)(payload + offset));
+    p.println(reinterpret_cast<const char *>(payload + offset));
   }
   p.println();
 }
