@@ -1,4 +1,4 @@
-#include <math.h>
+#include <cmath>
 #include "astronomy.h"
 
 double julian_date(int32_t year, int32_t month, int32_t day, int32_t hour,
@@ -10,8 +10,8 @@ double julian_date(int32_t year, int32_t month, int32_t day, int32_t hour,
 
   int32_t jdn = day + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100
     + y / 400 - 32045;
-  double jd = (double)jdn + (double)(hour - 12) / 24 + (double)min / 1440
-    + (double)sec / 86400;
+  double jd = double(jdn) + double(hour - 12) / 24 + double(min) / 1440
+    + double(sec) / 86400;
   return jd;
 }
 
@@ -70,7 +70,7 @@ struct day_fraction_result compute_day_fraction(float lat, float lon, double jd)
 
   float solar_noon = -(lon + E)/360;
   float sunrise = solar_noon - H0/360;
-  float day_fraction = (float)(jd - floor(jd)) - sunrise;
+  float day_fraction = float(jd - floor(jd)) - sunrise;
   float daylength_fraction = H0/180;
 
   if (day_fraction < 0) {
@@ -79,9 +79,8 @@ struct day_fraction_result compute_day_fraction(float lat, float lon, double jd)
     day_fraction -= 1;
   }
 
-  struct day_fraction_result res = {
+  return {
     .day_fraction = day_fraction,
     .daylength_fraction = daylength_fraction,
   };
-  return res;
 }
