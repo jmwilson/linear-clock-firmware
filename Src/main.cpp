@@ -102,9 +102,12 @@ static void Configure_TLC5926()
     tlc592xBuf[2*i] = 0x00;
     tlc592xBuf[2*i + 1] = 0x40;
   }
-  if (HAL_SPI_Transmit(&hspi1, tlc592xBuf, sizeof(tlc592xBuf), 1000) != HAL_OK) {
+  if (HAL_SPI_Transmit_DMA(
+      &hspi1, tlc592xBuf, sizeof(tlc592xBuf)) != HAL_OK
+  ) {
     Error_Handler();
   }
+  while (hspi1.State != HAL_SPI_STATE_READY) { }
 
   TLC5926_Switch_To_Normal_Mode();
 
