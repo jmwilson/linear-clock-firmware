@@ -117,8 +117,9 @@ size_t Print::printDecimal(long n, int exp) const {
 
 size_t Print::printDecimal(unsigned long n, int exp) const
 {
-  char buf[8 * sizeof(long) + 1]; // Assumes 8-bit chars plus zero byte.
+  char buf[13]; // 2^32 - 1 is 10 digits, plus decimal, leading zero and \0
   char *str = &buf[sizeof(buf) - 1];
+  size_t l = 0;
 
   *str = '\0';
 
@@ -135,7 +136,15 @@ size_t Print::printDecimal(unsigned long n, int exp) const
     }
   } while(n);
 
-  return write(str);
+  if (exp > 0) {
+    l += print('0');
+    l += print('.');
+    while (exp-- > 0) {
+      l += print('0');
+    }
+  }
+
+  return l + write(str);
 }
 
 size_t Print::println(const std::string &s) const
@@ -207,6 +216,7 @@ size_t Print::printNumber(unsigned long n, uint8_t base, int width) const
 {
   char buf[8 * sizeof(long) + 1]; // Assumes 8-bit chars plus zero byte.
   char *str = &buf[sizeof(buf) - 1];
+  size_t l = 0;
 
   *str = '\0';
 
@@ -219,9 +229,13 @@ size_t Print::printNumber(unsigned long n, uint8_t base, int width) const
     --width;
 
     *--str = c < 10 ? c + '0' : c + 'A' - 10;
-  } while(n || width > 0);
+  } while(n);
 
-  return write(str);
+  while(width-- > 0) {
+    l += print('0');
+  }
+
+  return l + write(str);
 }
 
 size_t Print::printFloat(double number, uint8_t digits) const
