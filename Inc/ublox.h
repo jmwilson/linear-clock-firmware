@@ -2,6 +2,7 @@
 #define __UBLOX_H
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "main.h"
 
 #define UBLOX_SYNC_1 0xb5
@@ -66,8 +67,8 @@ static inline uint16_t readU2(uint8_t *buffer, uint16_t offset)
   return result;
 }
 
-typedef void (*UBX_Packet_Callback)(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length);
-void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address, UBX_Packet_Callback callback, uint32_t timeout);
+typedef bool (*UBX_Packet_Callback)(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length);
+uint16_t UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address, UBX_Packet_Callback callback, uint32_t timeout);
 void UBX_Set_Size_And_Checksum(uint8_t *packet, uint16_t length);
 
 #ifdef __cplusplus

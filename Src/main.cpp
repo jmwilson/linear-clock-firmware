@@ -68,7 +68,6 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 static uint8_t tlc592xBuf[TLC592x_BUF_SIZE];
 static volatile bool ubloxDataAvailable = false;
-static uint8_t ackCount = 0;
 
 static bool lostFix = true;
 static uint32_t missedFixCount = 0;
@@ -103,22 +102,20 @@ static void Configure_TLC5926()
     tlc592xBuf[2*i] = 0x00;
     tlc592xBuf[2*i + 1] = 0x40;
   }
-  if (HAL_SPI_Transmit_DMA(
-      &hspi1, tlc592xBuf, sizeof(tlc592xBuf)) != HAL_OK
-  ) {
+  if (HAL_SPI_Transmit(&hspi1, tlc592xBuf, sizeof(tlc592xBuf), 1000) != HAL_OK) {
     Error_Handler();
   }
-  while (hspi1.State != HAL_SPI_STATE_READY) { }
 
   TLC5926_Switch_To_Normal_Mode();
 
   HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
 }
 
-static void Require_ublox(uint16_t timeout_ticks)
+static void Require_ublox(uint16_t timeout)
 {
-  uint32_t tickstart = HAL_GetTick();
-  while (HAL_GetTick() - tickstart < timeout_ticks) {
+  const uint32_t tickstart = HAL_GetTick();
+
+  while (HAL_GetTick() - tickstart < timeout) {
     if (HAL_I2C_IsDeviceReady(&hi2c1, UBLOX_I2C_ADDRESS << 1, 1, 10) == HAL_OK) {
       return;
     }
@@ -126,29 +123,24 @@ static void Require_ublox(uint16_t timeout_ticks)
   Error_Handler();
 }
 
-static void Expect_ACK_Callback(uint8_t cls, uint8_t id,
+static bool Expect_ACK_Callback(uint8_t cls, uint8_t id,
   uint8_t *payload, uint16_t length)
 {
-  if (cls != UBX_ACK || id != UBX_ACK_ACK) {
-    return;
-  }
-  ++ackCount;
+  return cls == UBX_ACK && id == UBX_ACK_ACK;
 }
 
 static void Require_Ublox_ACK()
 {
-  // Clear ACK counter
-  ackCount = 0;
-  uint32_t tickstart = HAL_GetTick();
+  const uint32_t tickstart = HAL_GetTick();
   const uint32_t timeout = 1000;  // ACK must be sent within 1 s
 
-  while (!ackCount && HAL_GetTick() - tickstart < timeout) {
-    UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Expect_ACK_Callback, 100);
+  while (HAL_GetTick() - tickstart < timeout) {
+    if (UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Expect_ACK_Callback, 100)) {
+      return;
+    }
     HAL_Delay(10);  // Don't hammer the bus
   }
-  if (!ackCount) {
-    Error_Handler();
-  }
+  Error_Handler();
 }
 
 static void UBX_Disable_UART(void)
@@ -183,6 +175,7 @@ static void UBX_Disable_UART(void)
 
 static void UBX_Configure_Navigation(void)
 {
+  // Set update period to 10 s
   uint8_t packet_rate[] = {
     UBLOX_SYNC_1,
     UBLOX_SYNC_2,
@@ -205,6 +198,7 @@ static void UBX_Configure_Navigation(void)
   }
   Require_Ublox_ACK();
 
+  // Enable periodic updates
   uint8_t packet_msg[] = {
     UBLOX_SYNC_1,
     UBLOX_SYNC_2,
@@ -283,11 +277,11 @@ static void UBX_Save_Configuration(void)
   Require_Ublox_ACK();
 }
 
-static void UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
+static bool UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
   uint8_t *payload, uint16_t length)
 {
   if (cls != UBX_MON || id != UBX_MON_VER) {
-    return;
+    return false;
   }
 
   p.print("u-blox HW version ");
@@ -300,6 +294,8 @@ static void UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
     p.println(reinterpret_cast<const char *>(payload + offset));
   }
   p.println();
+
+  return true;
 }
 
 static void UBX_Print_Version(void)
@@ -319,17 +315,19 @@ static void UBX_Print_Version(void)
     Error_Handler();
   }
 
-  uint32_t tickstart = HAL_GetTick();
+  const uint32_t tickstart = HAL_GetTick();
   while (HAL_GetTick() - tickstart < 1000) {
-    UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, UBX_Print_Version_Callback, 100);
-    HAL_Delay(10);
+    if (UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, UBX_Print_Version_Callback, 100)) {
+      return;
+    }
+    HAL_Delay(10);  // Don't hammer the bus
   }
 }
 
-static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length)
+static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length)
 {
   if (cls != UBX_NAV || id != UBX_NAV_PVT) {
-    return;
+    return false;
   }
 
   uint16_t year = readU2(payload, 4);
@@ -360,7 +358,7 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
       HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
       htim16.Instance->CCR1 = 100;
     }
-    return;
+    return true;
   }
 
   p.print("Position: ");
@@ -391,9 +389,17 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
 
   auto jd = julian_date(year, month, day, hour, min, sec);
   auto day_fraction_s = compute_day_fraction(lat * 1e-7f, lon * 1e-7f, jd);
+  int32_t day_fraction = static_cast<uint32_t>(
+    roundf(NUM_LED*day_fraction_s.day_fraction));
+  int32_t sunset_fraction = static_cast<uint32_t>(
+    roundf(NUM_LED*day_fraction_s.daylength_fraction));
 
-  int32_t day_fraction = roundf(NUM_LED*day_fraction_s.day_fraction);
-  int32_t sunset_fraction = roundf(NUM_LED*day_fraction_s.daylength_fraction);
+  p.print("Day fraction: ");
+  p.println(day_fraction_s.day_fraction);
+
+  p.print("Sunset at day fraction: ");
+  p.println(day_fraction_s.daylength_fraction);
+  p.println();
 
   // Apply a bathtub-like curve to the output brightness
   auto dimming = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)*fmaxf(
@@ -404,7 +410,7 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
     ),
     1/(1 + expf(-(day_fraction_s.day_fraction - 1)/BRIGHTNESS_TAU))
   );
-  htim16.Instance->CCR1 = roundf(1000*dimming);
+  htim16.Instance->CCR1 = static_cast<uint32_t>(roundf(1000*dimming));
 
   // Set bit sunset_fraction in the stream of bits
   for (uint8_t b = 0; b < 14; b++) {
@@ -429,12 +435,7 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   }
   HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
 
-  p.print("Day fraction: ");
-  p.println(day_fraction_s.day_fraction);
-
-  p.print("Sunset at day fraction: ");
-  p.println(day_fraction_s.daylength_fraction);
-  p.println();
+  return true;
 }
 /* USER CODE END 0 */
 
@@ -495,12 +496,12 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-    while (!ubloxDataAvailable) {
-      HAL_SuspendTick();
-      __WFE();
-      HAL_ResumeTick();
+    if (ubloxDataAvailable) {
+      UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Navigation_Callback, 100);
     }
-    UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Navigation_Callback, 100);
+    HAL_SuspendTick();
+    __WFE();
+    HAL_ResumeTick();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -867,8 +868,12 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  p.print("Assertion failed at ");
+  p.print(reinterpret_cast<char *>(file));
+  p.print(", line ");
+  p.println(line);
+  HAL_GPIO_WritePin(NUCLEO_LED_GPIO_Port, NUCLEO_LED_Pin, GPIO_PIN_SET);
+  while(1) { }
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

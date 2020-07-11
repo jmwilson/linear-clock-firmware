@@ -84,18 +84,21 @@ void UBX_Set_Size_And_Checksum(uint8_t *packet, uint16_t length)
   packet[length - 1] = chkB;
 }
 
-void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
-                 UBX_Packet_Callback callback, uint32_t timeout)
+uint16_t UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
+                     UBX_Packet_Callback callback, uint32_t timeout)
 {
   uint8_t receive_buffer[I2C_RECEIVE_BUFFER_SIZE];
   uint8_t payload_buffer[PAYLOAD_BUFFER_SIZE];
 
   uint16_t bytes_available = 0;
   uint8_t reg = 0xFD;
+
+  uint16_t packets_accepted = 0;
+
   if (writeI2C(hi2c, device_address, timeout,
       &reg, 1, false) != HAL_I2C_ERROR_NONE
   ) {
-    return;
+    return packets_accepted;
   }
   if (readI2C(hi2c, device_address, timeout,
       receive_buffer, 2, true) == HAL_I2C_ERROR_NONE
@@ -123,7 +126,7 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
     if (readI2C(hi2c, device_address, timeout,
         receive_buffer, bytes_read, true) != HAL_I2C_ERROR_NONE
     ) {
-      return;
+      return packets_accepted;
     }
 
     for(uint8_t i = 0; i < bytes_read; ++i) {
@@ -192,7 +195,9 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
         case UBX_CHECKSUM_B:
           packet_chkB = b;
           if (chkA == packet_chkA && chkB == packet_chkB) {
-            callback(packet_class, packet_id, payload_buffer, payload_length);
+            if (callback(packet_class, packet_id, payload_buffer, payload_length)) {
+              ++packets_accepted;
+            }
           }
           state = UBX_PACKET_COMPLETE;
           break;
@@ -207,4 +212,5 @@ void UBX_Receive(I2C_HandleTypeDef *hi2c, uint16_t device_address,
     }
     bytes_available -= bytes_read;
   }
+  return packets_accepted;
 }

@@ -20,9 +20,13 @@ TARGET = ublox-test
 # building variables
 ######################################
 # debug build?
-DEBUG = 1
+DEBUG = 0
 # optimization
-OPT = -Og
+ifeq ($(DEBUG), 1)
+OPT = -Og -fno-math-errno
+else
+OPT = -Os -fno-math-errno
+endif
 
 
 #######################################
@@ -119,6 +123,9 @@ C_DEFS =  \
 -DUSE_HAL_DRIVER \
 -DSTM32G031xx
 
+ifeq ($(DEBUG),1)
+C_DEFS += -DUSE_FULL_ASSERT
+endif
 
 # AS includes
 AS_INCLUDES =
