@@ -67,7 +67,7 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 static uint8_t tlc592xBuf[TLC592x_BUF_SIZE];
-static volatile uint8_t ubloxDataAvailable = 0;
+static volatile bool ubloxDataAvailable = false;
 static uint8_t ackCount = 0;
 
 static bool lostFix = true;
@@ -119,7 +119,7 @@ static void Require_ublox(uint16_t timeout_ticks)
 {
   uint32_t tickstart = HAL_GetTick();
   while (HAL_GetTick() - tickstart < timeout_ticks) {
-    if (HAL_I2C_IsDeviceReady(&hi2c1, 0x42 << 1, 1, 10) == HAL_OK) {
+    if (HAL_I2C_IsDeviceReady(&hi2c1, UBLOX_I2C_ADDRESS << 1, 1, 10) == HAL_OK) {
       return;
     }
   }
@@ -135,11 +135,12 @@ static void Expect_ACK_Callback(uint8_t cls, uint8_t id,
   ++ackCount;
 }
 
-static void Wait_For_Ublox_ACK(uint32_t timeout)
+static void Require_Ublox_ACK()
 {
   // Clear ACK counter
   ackCount = 0;
   uint32_t tickstart = HAL_GetTick();
+  const uint32_t timeout = 1000;  // ACK must be sent within 1 s
 
   while (!ackCount && HAL_GetTick() - tickstart < timeout) {
     UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Expect_ACK_Callback, 100);
@@ -177,7 +178,7 @@ static void UBX_Disable_UART(void)
   ) {
     Error_Handler();
   }
-  Wait_For_Ublox_ACK(1000);
+  Require_Ublox_ACK();
 }
 
 static void UBX_Configure_Navigation(void)
@@ -202,7 +203,7 @@ static void UBX_Configure_Navigation(void)
   ) {
     Error_Handler();
   }
-  Wait_For_Ublox_ACK(1000);
+  Require_Ublox_ACK();
 
   uint8_t packet_msg[] = {
     UBLOX_SYNC_1,
@@ -224,7 +225,7 @@ static void UBX_Configure_Navigation(void)
   ) {
     Error_Handler();
   }
-  Wait_For_Ublox_ACK(1000);
+  Require_Ublox_ACK();
 }
 
 static void UBX_Configure_I2C(void)
@@ -255,7 +256,7 @@ static void UBX_Configure_I2C(void)
   ) {
     Error_Handler();
   }
-  Wait_For_Ublox_ACK(1000);
+  Require_Ublox_ACK();
 }
 
 static void UBX_Save_Configuration(void)
@@ -279,7 +280,7 @@ static void UBX_Save_Configuration(void)
   ) {
     Error_Handler();
   }
-  Wait_For_Ublox_ACK(1000);
+  Require_Ublox_ACK();
 }
 
 static void UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
@@ -341,7 +342,7 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   uint8_t numSV = payload[23];
   int32_t lon = readU4(payload, 24);
   int32_t lat = readU4(payload, 28);
-  int32_t alt = readU4(payload, 36);
+  int32_t alt_msl = readU4(payload, 36);
 
   auto gnssFixOK = flags & 1;
   if (gnssFixOK) {
@@ -362,25 +363,31 @@ static void Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
     return;
   }
 
-  p.print("Lat: ");
-  p.print(lat);
-  p.println(" (degrees * 10^-7)");
+  p.print("Position: ");
+  p.printDecimal(lat, 7);
+  p.print("°, ");
+  p.printDecimal(lon, 7);
+  p.println("°");
 
-  p.print("Long: ");
-  p.print(lon);
-  p.println(" (degrees * 10^-7)");
-
-  p.print("Alt: ");
-  p.print(alt);
-  p.println(" (mm)");
+  p.print("Altitude (MSL): ");
+  p.printDecimal(alt_msl, 3);
+  p.println(" m");
 
   p.print("SIV: ");
   p.println(numSV);
 
-  p.print("Time: ");
-  p.print(year); p.print("-"); p.print(month); p.print("-"); p.print(day);
+  p.print("Time (UTC): ");
+  p.print(year);
+  p.print("-");
+  p.print(month, Print::DEC, 2);
+  p.print("-");
+  p.print(day, Print::DEC, 2);
   p.print(" ");
-  p.print(hour); p.print(":"); p.print(min); p.print(":"); p.println(sec);
+  p.print(hour, Print::DEC, 2);
+  p.print(":");
+  p.print(min, Print::DEC, 2);
+  p.print(":");
+  p.println(sec, Print::DEC, 2);
 
   auto jd = julian_date(year, month, day, hour, min, sec);
   auto day_fraction_s = compute_day_fraction(lat * 1e-7f, lon * 1e-7f, jd);
@@ -478,7 +485,7 @@ int main(void)
 
     HAL_FLASH_Unlock();
     HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD,
-      (uint32_t)&_configBytes, _configBytes & ~(uint64_t)1);
+      reinterpret_cast<uint32_t>(&_configBytes), _configBytes & ~(uint64_t)1);
     HAL_FLASH_Lock();
     p.println("u-blox configuration saved");
   }
@@ -814,7 +821,7 @@ static void MX_GPIO_Init(void)
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == TX_READY_Pin) {
-    ubloxDataAvailable = 1;
+    ubloxDataAvailable = true;
     __SEV();
   }
 }
@@ -822,7 +829,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == TX_READY_Pin) {
-    ubloxDataAvailable = 0;
+    ubloxDataAvailable = false;
   }
 }
 

@@ -28,14 +28,14 @@
 
 #include "main.h"
 
-#define DEC 10
-#define HEX 16
-#define OCT 8
-#define BIN 2
-
 class Print
 {
 public:
+  static const int DEC = 10;
+  static const int HEX = 16;
+  static const int OCT = 8;
+  static const int BIN = 2;
+
   Print(UART_HandleTypeDef &uart) : _uart(&uart) {}
 
   size_t write(const char *str) const {
@@ -50,28 +50,35 @@ public:
   size_t print(const std::string &) const;
   size_t print(const char*) const;
   size_t print(char) const;
-  size_t print(unsigned char, int = DEC) const;
-  size_t print(int, int = DEC) const;
-  size_t print(unsigned int, int = DEC) const;
-  size_t print(long, int = DEC) const;
-  size_t print(unsigned long, int = DEC) const;
+  size_t print(unsigned char, int = DEC, int = 0) const;
+  size_t print(int, int = DEC, int = 0) const;
+  size_t print(unsigned int, int = DEC, int = 0) const;
+  size_t print(long, int = DEC, int = 0) const;
+  size_t print(unsigned long, int = DEC, int = 0) const;
   size_t print(double, int = 2) const;
+
+  size_t printDecimal(unsigned char, int exp) const;
+  size_t printDecimal(int, int exp) const;
+  size_t printDecimal(unsigned int, int exp) const;
+  size_t printDecimal(long, int exp) const;
+  size_t printDecimal(unsigned long, int exp) const;
 
   size_t println(const std::string &s) const;
   size_t println(const char*) const;
   size_t println(char) const;
-  size_t println(unsigned char, int = DEC) const;
-  size_t println(int, int = DEC) const;
-  size_t println(unsigned int, int = DEC) const;
-  size_t println(long, int = DEC) const;
-  size_t println(unsigned long, int = DEC) const;
+  size_t println(unsigned char, int = DEC, int = 0) const;
+  size_t println(int, int = DEC, int = 0) const;
+  size_t println(unsigned int, int = DEC, int = 0) const;
+  size_t println(long, int = DEC, int = 0) const;
+  size_t println(unsigned long, int = DEC, int = 0) const;
   size_t println(double, int = 2) const;
   size_t println(void) const;
 
 private:
   UART_HandleTypeDef *_uart;
-  size_t printNumber(unsigned long, uint8_t) const;
-  size_t printFloat(double, uint8_t) const;
+
+  size_t printNumber(unsigned long, uint8_t base, int width) const;
+  size_t printFloat(double, uint8_t digits) const;
 };
 
 #endif // __PRINT_H

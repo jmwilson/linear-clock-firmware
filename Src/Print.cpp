@@ -31,7 +31,7 @@
 /* default implementation: may be overridden */
 size_t Print::write(const uint8_t *buffer, size_t size) const
 {
-  HAL_UART_Transmit(_uart, (uint8_t *)buffer, size, 1000);
+  HAL_UART_Transmit(_uart, const_cast<uint8_t *>(buffer), size, 1000);
   return size;
 }
 
@@ -50,38 +50,38 @@ size_t Print::print(char c) const
   return write(&c, 1);
 }
 
-size_t Print::print(unsigned char b, int base) const
+size_t Print::print(unsigned char b, int base, int width) const
 {
-  return print((unsigned long) b, base);
+  return print(static_cast<unsigned long>(b), base, width);
 }
 
-size_t Print::print(int n, int base) const
+size_t Print::print(int n, int base, int width) const
 {
-  return print((long) n, base);
+  return print(static_cast<long>(n), base, width);
 }
 
-size_t Print::print(unsigned int n, int base) const
+size_t Print::print(unsigned int n, int base, int width) const
 {
-  return print((unsigned long) n, base);
+  return print(static_cast<unsigned long>(n), base, width);
 }
 
-size_t Print::print(long n, int base) const
+size_t Print::print(long n, int base, int width) const
 {
-  if (base == 10) {
+  if (base == DEC) {
     if (n < 0) {
       int t = print('-');
       n = -n;
-      return printNumber(n, 10) + t;
+      return printNumber(n, 10, width) + t;
     }
-    return printNumber(n, 10);
+    return printNumber(n, 10, width);
   } else {
-    return printNumber(n, base);
+    return printNumber(n, base, width);
   }
 }
 
-size_t Print::print(unsigned long n, int base) const
+size_t Print::print(unsigned long n, int base, int width) const
 {
-  return printNumber(n, base);
+  return printNumber(n, base, width);
 }
 
 size_t Print::print(double n, int digits) const
@@ -92,6 +92,50 @@ size_t Print::print(double n, int digits) const
 size_t Print::println(void) const
 {
   return write("\r\n");
+}
+
+size_t Print::printDecimal(unsigned char n, int exp) const {
+  return printDecimal(static_cast<unsigned long>(n), exp);
+}
+
+size_t Print::printDecimal(int n, int exp) const {
+  return printDecimal(static_cast<long>(n), exp);
+}
+
+size_t Print::printDecimal(unsigned int n, int exp) const {
+  return printDecimal(static_cast<unsigned long>(n), exp);
+}
+
+size_t Print::printDecimal(long n, int exp) const {
+  if (n < 0) {
+    int t = print("-");
+    n = -n;
+    return t + printDecimal(static_cast<unsigned long>(n), exp);
+  }
+  return printDecimal(static_cast<unsigned long>(n), exp);
+}
+
+size_t Print::printDecimal(unsigned long n, int exp) const
+{
+  char buf[8 * sizeof(long) + 1]; // Assumes 8-bit chars plus zero byte.
+  char *str = &buf[sizeof(buf) - 1];
+
+  *str = '\0';
+
+  do {
+    char c = n % DEC;
+    n /= DEC;
+
+    *--str = c + '0';
+    if (--exp == 0) {
+      *--str = '.';
+      if (n == 0) {
+        *--str = '0';
+      }
+    }
+  } while(n);
+
+  return write(str);
 }
 
 size_t Print::println(const std::string &s) const
@@ -115,37 +159,37 @@ size_t Print::println(char c) const
   return n;
 }
 
-size_t Print::println(unsigned char b, int base) const
+size_t Print::println(unsigned char b, int base, int width) const
 {
-  size_t n = print(b, base);
+  size_t n = print(b, base, width);
   n += println();
   return n;
 }
 
-size_t Print::println(int num, int base) const
+size_t Print::println(int num, int base, int width) const
 {
-  size_t n = print(num, base);
+  size_t n = print(num, base, width);
   n += println();
   return n;
 }
 
-size_t Print::println(unsigned int num, int base) const
+size_t Print::println(unsigned int num, int base, int width) const
 {
-  size_t n = print(num, base);
+  size_t n = print(num, base, width);
   n += println();
   return n;
 }
 
-size_t Print::println(long num, int base) const
+size_t Print::println(long num, int base, int width) const
 {
-  size_t n = print(num, base);
+  size_t n = print(num, base, width);
   n += println();
   return n;
 }
 
-size_t Print::println(unsigned long num, int base) const
+size_t Print::println(unsigned long num, int base, int width) const
 {
-  size_t n = print(num, base);
+  size_t n = print(num, base, width);
   n += println();
   return n;
 }
@@ -159,7 +203,7 @@ size_t Print::println(double num, int digits) const
 
 // Private Methods /////////////////////////////////////////////////////////////
 
-size_t Print::printNumber(unsigned long n, uint8_t base) const
+size_t Print::printNumber(unsigned long n, uint8_t base, int width) const
 {
   char buf[8 * sizeof(long) + 1]; // Assumes 8-bit chars plus zero byte.
   char *str = &buf[sizeof(buf) - 1];
@@ -167,14 +211,15 @@ size_t Print::printNumber(unsigned long n, uint8_t base) const
   *str = '\0';
 
   // prevent crash if called with base == 1
-  if (base < 2) base = 10;
+  if (base < 2) base = DEC;
 
   do {
     char c = n % base;
     n /= base;
+    --width;
 
     *--str = c < 10 ? c + '0' : c + 'A' - 10;
-  } while(n);
+  } while(n || width > 0);
 
   return write(str);
 }
@@ -189,7 +234,7 @@ size_t Print::printFloat(double number, uint8_t digits) const
   if (number <-4294967040.0) return print ("ovf");  // constant determined empirically
 
   // Handle negative numbers
-  if (number < 0.0)
+  if (number < 0)
   {
      n += print('-');
      number = -number;
@@ -198,13 +243,13 @@ size_t Print::printFloat(double number, uint8_t digits) const
   // Round correctly so that print(1.999, 2) prints as "2.00"
   double rounding = 0.5;
   for (uint8_t i=0; i<digits; ++i)
-    rounding /= 10.0;
+    rounding /= 10;
 
   number += rounding;
 
   // Extract the integer part of the number and print it
-  unsigned long int_part = (unsigned long)number;
-  double remainder = number - (double)int_part;
+  unsigned long int_part = static_cast<unsigned long>(number);
+  double remainder = number - int_part;
   n += print(int_part);
 
   // Print the decimal point, but only if there are digits beyond
@@ -215,8 +260,8 @@ size_t Print::printFloat(double number, uint8_t digits) const
   // Extract digits from the remainder one at a time
   while (digits-- > 0)
   {
-    remainder *= 10.0;
-    unsigned int toPrint = (unsigned int)(remainder);
+    remainder *= 10;
+    unsigned int toPrint = static_cast<unsigned int>(remainder);
     n += print(toPrint);
     remainder -= toPrint;
   }
