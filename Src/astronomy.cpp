@@ -33,7 +33,7 @@ struct day_fraction_result compute_day_fraction(float lat, float lon, double jd)
   // Richmond, Virginia: Willmann-Bell, 1998.
 
   // Julian century
-  float T = (jd - epoch) / 36525;
+  float T = static_cast<float>(jd - epoch) / 36525;
   // Solar mean anomoly (deg)
   float M = fmodf(357.52911f + T * (35999.05029f - .0001537f * T), 360);
   // Solar equation of the center

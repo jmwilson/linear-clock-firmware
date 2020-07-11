@@ -395,10 +395,10 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
     roundf(NUM_LED*day_fraction_s.daylength_fraction));
 
   p.print("Day fraction: ");
-  p.println(day_fraction_s.day_fraction);
+  p.println(day_fraction_s.day_fraction, 3);
 
   p.print("Sunset at day fraction: ");
-  p.println(day_fraction_s.daylength_fraction);
+  p.println(day_fraction_s.daylength_fraction, 3);
   p.println();
 
   // Apply a bathtub-like curve to the output brightness

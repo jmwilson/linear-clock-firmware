@@ -25,7 +25,7 @@ DEBUG = 0
 ifeq ($(DEBUG), 1)
 OPT = -Og -fno-math-errno
 else
-OPT = -Os -fno-math-errno
+OPT = -Os -fno-math-errno -flto
 endif
 
 
@@ -155,7 +155,7 @@ CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 CFLAGS += -Wdouble-promotion -Wfloat-conversion
 HG_RELEASE := $(shell hg id --tags)
 
-CXXFLAGS = $(CFLAGS)
+CXXFLAGS = $(CFLAGS) -Wsign-promo
 
 #######################################
 # LDFLAGS
@@ -176,13 +176,15 @@ all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET
 # build the application
 #######################################
 # list of objects
-OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
+# list of ASM program objects
+OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
+vpath %.s $(sort $(dir $(ASM_SOURCES)))
+# list of C objects
+OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
 vpath %.c $(sort $(dir $(C_SOURCES)))
+# list of C++ objects
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(CXX_SOURCES:.cpp=.o)))
 vpath %.cpp $(sort $(dir $(CXX_SOURCES)))
-# list of ASM program objects
-OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
-vpath %.s $(sort $(dir $(ASM_SOURCES)))
 
 $(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@

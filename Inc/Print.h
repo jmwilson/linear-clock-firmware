@@ -40,11 +40,11 @@ public:
 
   size_t write(const char *str) const {
     if (str == NULL) return 0;
-    return write((const uint8_t *)str, strlen(str));
+    return write(reinterpret_cast<const uint8_t *>(str), strlen(str));
   }
   size_t write(const uint8_t *buffer, size_t size) const;
   size_t write(const char *buffer, size_t size) const {
-    return write((const uint8_t *)buffer, size);
+    return write(reinterpret_cast<const uint8_t *>(buffer), size);
   }
 
   size_t print(const std::string &) const;
