@@ -55,7 +55,7 @@ public:
   size_t print(unsigned int, int = DEC, int = 0) const;
   size_t print(long, int = DEC, int = 0) const;
   size_t print(unsigned long, int = DEC, int = 0) const;
-  size_t print(double, int = 2) const;
+  size_t print(float, int = 2) const;
 
   size_t printDecimal(unsigned char, int exp) const;
   size_t printDecimal(int, int exp) const;
@@ -71,14 +71,14 @@ public:
   size_t println(unsigned int, int = DEC, int = 0) const;
   size_t println(long, int = DEC, int = 0) const;
   size_t println(unsigned long, int = DEC, int = 0) const;
-  size_t println(double, int = 2) const;
+  size_t println(float, int = 2) const;
   size_t println(void) const;
 
 private:
   UART_HandleTypeDef *_uart;
 
   size_t printNumber(unsigned long, uint8_t base, int width) const;
-  size_t printFloat(double, uint8_t digits) const;
+  size_t printFloat(float, uint8_t digits) const;
 };
 
 #endif // __PRINT_H

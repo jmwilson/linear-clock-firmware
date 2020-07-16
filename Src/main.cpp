@@ -43,15 +43,15 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define MIN_PWM_BRIGHTNESS 0.1f
-#define BRIGHTNESS_TAU 0.013888889f // 1/24 * 1/3
+const auto PWM_SCALE = 1000;
+const auto MIN_PWM_BRIGHTNESS = 0.1f;
+const auto DIMMING_TAU = 0.013888889f; // 1/24 * 1/3 (1 hour = 3 time constants)
 
-#define NUM_TLC592x 14
-#define TLC592x_BUF_SIZE (2*NUM_TLC592x)
+const auto NUM_TLC592x = 14;
+const auto TLC592x_BUF_SIZE = 2 * NUM_TLC592x;
+const auto NUM_LED = NUM_TLC592x * 16 / 2;
 
-#define MAX_MISSED_FIX_COUNT 30 // * 10 seconds = 5 minutes w/o GPS fix
-
-#define NUM_LED 112
+const auto MAX_MISSED_FIX_COUNT = 30; // * 10 seconds = 5 minutes w/o GPS fix
 
 /* USER CODE END PM */
 
@@ -69,8 +69,10 @@ UART_HandleTypeDef huart2;
 static uint8_t tlc592xBuf[TLC592x_BUF_SIZE];
 static volatile bool ubloxDataAvailable = false;
 
+// Initialize lostFix = true to display no-fix condition on boot, otherwise
+// set it when missedFixCount exceeds a threshold.
 static bool lostFix = true;
-static uint32_t missedFixCount = 0;
+static int missedFixCount = 0;
 
 const Print p(huart2);
 
@@ -97,7 +99,7 @@ static void Configure_TLC5926()
 {
   TLC5926_Switch_To_Special_Mode();
 
-  for (int8_t i = 0; i < NUM_TLC592x; i++) {
+  for (auto i = 0; i < NUM_TLC592x; i++) {
     // {CM,HC,[CC0:CC5]} = {0,1,000000}
     tlc592xBuf[2*i] = 0x00;
     tlc592xBuf[2*i + 1] = 0x40;
@@ -236,8 +238,7 @@ static void UBX_Configure_I2C(void)
 
     UBX_PORT_I2C, // Port ID
     0, // reserved
-    UBX_INT16((6 << 2) | 1), // txReady: enabled, PIO 6 (TX),
-                             // active high, zero threshold
+    UBX_INT16((6 << 2) | 1), // txReady: enabled on PIO 6 (TX)
     UBX_INT32(UBLOX_I2C_ADDRESS << 1), // mode: 0x42 slave address
     UBX_INT32(0), // reserved
     UBX_INT16(1), // inProtoMask: UBX only
@@ -292,7 +293,7 @@ static bool UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
   p.print("u-blox SW version ");
   p.println(reinterpret_cast<const char *>(payload));
   p.println("u-blox extension strings:");
-  for (uint16_t offset = 40; offset < length; offset += 30) {
+  for (auto offset = 40u; offset < length; offset += 30) {
     p.print("  ");
     p.println(reinterpret_cast<const char *>(payload + offset));
   }
@@ -359,7 +360,9 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
       tlc592xBuf[7] = 1;
       tlc592xBuf[21] = 1;
       HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
-      htim16.Instance->CCR1 = 100;
+      htim16.Instance->CCR1 = static_cast<uint32_t>(
+        MIN_PWM_BRIGHTNESS*PWM_SCALE
+      );
     }
     return true;
   }
@@ -392,10 +395,14 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
 
   auto jd = julian_date(year, month, day, hour, min, sec);
   auto day_fraction_s = compute_day_fraction(lat * 1e-7f, lon * 1e-7f, jd);
-  int32_t day_fraction = static_cast<uint32_t>(
-    roundf(NUM_LED*day_fraction_s.day_fraction));
-  int32_t sunset_fraction = static_cast<uint32_t>(
-    roundf(NUM_LED*day_fraction_s.daylength_fraction));
+
+  p.print("Solar azimuth: ");
+  p.print(day_fraction_s.solar_azimuth);
+  p.println("°");
+
+  p.print("Solar elevation: ");
+  p.print(day_fraction_s.solar_elevation);
+  p.println("°");
 
   p.print("Day fraction: ");
   p.println(day_fraction_s.day_fraction, 3);
@@ -404,36 +411,56 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   p.println(day_fraction_s.daylength_fraction, 3);
   p.println();
 
-  // Apply a bathtub-like curve to the output brightness
-  auto dimming = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)*fmaxf(
-    fminf(
-      1/(1 + expf(-day_fraction_s.day_fraction/BRIGHTNESS_TAU)),
-      1/(1 + expf((day_fraction_s.day_fraction
-        - day_fraction_s.daylength_fraction)/BRIGHTNESS_TAU))
-    ),
-    1/(1 + expf(-(day_fraction_s.day_fraction - 1)/BRIGHTNESS_TAU))
-  );
-  htim16.Instance->CCR1 = static_cast<uint32_t>(roundf(1000*dimming));
-
   // Set bit sunset_fraction in the stream of bits
-  for (uint8_t b = 0; b < 14; b++) {
-    if (NUM_LED - 8*(b + 1) <= sunset_fraction
-      && sunset_fraction < NUM_LED - 8*b
-    ) {
-      tlc592xBuf[b] = (uint8_t)(1 << (NUM_LED - sunset_fraction - 8*b));
+  if (isnanf(day_fraction_s.daylength_fraction)) {
+    // No sunrise or sunset
+    memset(tlc592xBuf, 0, TLC592x_BUF_SIZE / 2);
+    if (day_fraction_s.solar_elevation > 0) {
+      htim16.Instance->CCR1 = PWM_SCALE;
     } else {
-      tlc592xBuf[b] = 0;
+      htim16.Instance->CCR1 = static_cast<uint32_t>(
+        MIN_PWM_BRIGHTNESS*PWM_SCALE
+      );
     }
+  } else {
+    auto sunset_fraction = static_cast<int>(
+      roundf(NUM_LED*day_fraction_s.daylength_fraction));
+    for (auto b = 0; b < TLC592x_BUF_SIZE/2; b++) {
+      if (NUM_LED - 8*(b + 1) <= sunset_fraction
+        && sunset_fraction < NUM_LED - 8*b
+      ) {
+        tlc592xBuf[b] = static_cast<uint8_t>(
+          1 << (NUM_LED - sunset_fraction - 8*b)
+        );
+      } else {
+        tlc592xBuf[b] = 0;
+      }
+    }
+
+    // Apply a bathtub-like curve to the output brightness
+    auto dimming = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)*fmaxf(
+      fminf(
+        1/(1 + expf(-day_fraction_s.day_fraction/DIMMING_TAU)),
+        1/(1 + expf((day_fraction_s.day_fraction
+          - day_fraction_s.daylength_fraction)/DIMMING_TAU))
+      ),
+      1/(1 + expf(-(day_fraction_s.day_fraction - 1)/DIMMING_TAU))
+    );
+    htim16.Instance->CCR1 = static_cast<uint32_t>(roundf(PWM_SCALE*dimming));
   }
 
   // Set day_fraction bits high starting from the left
-  for (uint8_t b = 0; b < 14; b++) {
+  auto day_fraction = static_cast<int>(
+    roundf(NUM_LED*day_fraction_s.day_fraction));
+  for (auto b = 0; b < TLC592x_BUF_SIZE/2; b++) {
     if (day_fraction >= NUM_LED - 8*b) {
-      tlc592xBuf[14 + b] = 0xff;
+      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0xff;
     } else if (day_fraction < NUM_LED - 8*(b + 1)) {
-      tlc592xBuf[14 + b] = 0x00;
+      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0x00;
     } else {
-      tlc592xBuf[14 + b] = (uint8_t)(0xff << (NUM_LED - day_fraction - 8*b));
+      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = static_cast<uint8_t>(
+        0xff << (NUM_LED - day_fraction - 8*b)
+      );
     }
   }
   HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
@@ -482,6 +509,7 @@ int main(void)
   p.println(")");
   Require_ublox(1000);
   if ((_configBytes & 1) == 1) {
+    // Program u-blox configuration on first boot and set bit in flash
     UBX_Disable_UART();
     UBX_Configure_I2C();
     UBX_Configure_Navigation();

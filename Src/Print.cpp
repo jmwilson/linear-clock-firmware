@@ -84,7 +84,7 @@ size_t Print::print(unsigned long n, int base, int width) const
   return printNumber(n, base, width);
 }
 
-size_t Print::print(double n, int digits) const
+size_t Print::print(float n, int digits) const
 {
   return printFloat(n, digits);
 }
@@ -203,7 +203,7 @@ size_t Print::println(unsigned long num, int base, int width) const
   return n;
 }
 
-size_t Print::println(double num, int digits) const
+size_t Print::println(float num, int digits) const
 {
   size_t n = print(num, digits);
   n += println();
@@ -238,14 +238,14 @@ size_t Print::printNumber(unsigned long n, uint8_t base, int width) const
   return l + write(str);
 }
 
-size_t Print::printFloat(double number, uint8_t digits) const
+size_t Print::printFloat(float number, uint8_t digits) const
 {
   size_t n = 0;
 
   if (std::isnan(number)) return print("nan");
   if (std::isinf(number)) return print("inf");
-  if (number > 4294967040.0) return print ("ovf");  // constant determined empirically
-  if (number <-4294967040.0) return print ("ovf");  // constant determined empirically
+  if (number > 4294967040.0f) return print ("ovf");  // constant determined empirically
+  if (number <-4294967040.0f) return print ("ovf");  // constant determined empirically
 
   // Handle negative numbers
   if (number < 0)
@@ -255,7 +255,7 @@ size_t Print::printFloat(double number, uint8_t digits) const
   }
 
   // Round correctly so that print(1.999, 2) prints as "2.00"
-  double rounding = 0.5;
+  float rounding = 0.5f;
   for (uint8_t i=0; i<digits; ++i)
     rounding /= 10;
 
@@ -263,7 +263,7 @@ size_t Print::printFloat(double number, uint8_t digits) const
 
   // Extract the integer part of the number and print it
   unsigned long int_part = static_cast<unsigned long>(number);
-  double remainder = number - int_part;
+  float remainder = number - int_part;
   n += print(int_part);
 
   // Print the decimal point, but only if there are digits beyond
