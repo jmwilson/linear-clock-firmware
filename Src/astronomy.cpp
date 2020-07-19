@@ -22,12 +22,12 @@ JD julian_date(int year, int month, int day, int hour,
   };
 }
 
-static inline float RADIANS(float deg)
+static constexpr float RADIANS(float deg)
 {
   return 0.0174532924f * deg;
 }
 
-static inline float DEGREES(float rad)
+static constexpr float DEGREES(float rad)
 {
   return 57.2957802f * rad;
 }
@@ -85,28 +85,26 @@ day_fraction_result compute_day_fraction(float lat, float lon, const JD &jd)
   const float H0 = DEGREES(acosf(-0.0145438975f / (cosf(RADIANS(lat)) * cosf(delta))
     - tanf(RADIANS(lat)) * tanf(delta)));
 
-  if (isnanf(H0)) {
-    const float solar_midnight = -(lon + E - 180)/360;
-    float day_fraction = jd.jdf - solar_midnight;
-
-    if (day_fraction < 0) {
-      day_fraction += 1;
-    } else if (day_fraction > 1) {
-      day_fraction -= 1;
-    }
-
-    return {
-      .day_fraction = day_fraction,
-      .daylength_fraction = nanf(""),
-      .solar_azimuth = A,
-      .solar_elevation = h,
-    };
-  }
-
   const float solar_noon = -(lon + E)/360;
-  const float sunrise = solar_noon - H0/360;
-  float day_fraction = jd.jdf - sunrise;
-  const float daylength_fraction = H0/180;
+  const float solar_midnight = -(lon + E - 180)/360;
+  float day_fraction, daylength_fraction;
+
+  if (isnanf(H0)) {
+    // For continuity of the solution, define the start of the day at solar
+    // midnight when the sun remains above the horizon, or at solar noon when
+    // it remains below the horizon.
+    if (h > 0) {
+      day_fraction = jd.jdf - solar_midnight;
+    } else {
+      day_fraction = jd.jdf - solar_noon;
+    }
+    daylength_fraction = nanf("");
+  } else {
+    const float sunrise = solar_noon - H0/360;
+
+    day_fraction = jd.jdf - sunrise;
+    daylength_fraction = H0/180;
+  }
 
   if (day_fraction < 0) {
     day_fraction += 1;

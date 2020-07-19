@@ -45,7 +45,7 @@
 /* USER CODE BEGIN PM */
 const auto PWM_SCALE = 1000;
 const auto MIN_PWM_BRIGHTNESS = 0.1f;
-const auto DIMMING_TAU = 0.013888889f; // 1/24 * 1/3 (1 hour = 3 time constants)
+const auto CIVIL_TWILIGHT_EL = 6.0f;
 
 const auto NUM_TLC592x = 14;
 const auto TLC592x_BUF_SIZE = 2 * NUM_TLC592x;
@@ -69,9 +69,6 @@ UART_HandleTypeDef huart2;
 static uint8_t tlc592xBuf[TLC592x_BUF_SIZE];
 static volatile bool ubloxDataAvailable = false;
 
-// Initialize lostFix = true to display no-fix condition on boot, otherwise
-// set it when missedFixCount exceeds a threshold.
-static bool lostFix = true;
 static int missedFixCount = 0;
 
 const Print p(huart2);
@@ -328,6 +325,17 @@ static void UBX_Print_Version(void)
   }
 }
 
+static void DisplayNoFixPattern()
+{
+  memset(tlc592xBuf, 0, sizeof(tlc592xBuf));
+  tlc592xBuf[7] = 1;
+  tlc592xBuf[21] = 1;
+  HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
+  htim16.Instance->CCR1 = static_cast<uint32_t>(
+    MIN_PWM_BRIGHTNESS*PWM_SCALE
+  );
+}
+
 static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length)
 {
   if (cls != UBX_NAV || id != UBX_NAV_PVT) {
@@ -348,21 +356,11 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
 
   auto gnssFixOK = flags & 1;
   if (gnssFixOK) {
-    lostFix = false;
     missedFixCount = 0;
   } else {
     p.println("Waiting for GPS fix...");
-    if (++missedFixCount >= MAX_MISSED_FIX_COUNT) {
-      lostFix = true;
-    }
-    if (lostFix) {
-      memset(tlc592xBuf, 0, sizeof(tlc592xBuf));
-      tlc592xBuf[7] = 1;
-      tlc592xBuf[21] = 1;
-      HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
-      htim16.Instance->CCR1 = static_cast<uint32_t>(
-        MIN_PWM_BRIGHTNESS*PWM_SCALE
-      );
+    if (++missedFixCount == MAX_MISSED_FIX_COUNT) {
+      DisplayNoFixPattern();
     }
     return true;
   }
@@ -415,13 +413,6 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   if (isnanf(day_fraction_s.daylength_fraction)) {
     // No sunrise or sunset
     memset(tlc592xBuf, 0, TLC592x_BUF_SIZE / 2);
-    if (day_fraction_s.solar_elevation > 0) {
-      htim16.Instance->CCR1 = PWM_SCALE;
-    } else {
-      htim16.Instance->CCR1 = static_cast<uint32_t>(
-        MIN_PWM_BRIGHTNESS*PWM_SCALE
-      );
-    }
   } else {
     auto sunset_fraction = static_cast<int>(
       roundf(NUM_LED*day_fraction_s.daylength_fraction));
@@ -436,17 +427,6 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
         tlc592xBuf[b] = 0;
       }
     }
-
-    // Apply a bathtub-like curve to the output brightness
-    auto dimming = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)*fmaxf(
-      fminf(
-        1/(1 + expf(-day_fraction_s.day_fraction/DIMMING_TAU)),
-        1/(1 + expf((day_fraction_s.day_fraction
-          - day_fraction_s.daylength_fraction)/DIMMING_TAU))
-      ),
-      1/(1 + expf(-(day_fraction_s.day_fraction - 1)/DIMMING_TAU))
-    );
-    htim16.Instance->CCR1 = static_cast<uint32_t>(roundf(PWM_SCALE*dimming));
   }
 
   // Set day_fraction bits high starting from the left
@@ -464,6 +444,22 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
     }
   }
   HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
+
+  if (day_fraction_s.solar_elevation > CIVIL_TWILIGHT_EL) {
+    htim16.Instance->CCR1 = PWM_SCALE;
+  } else if (day_fraction_s.solar_elevation < -CIVIL_TWILIGHT_EL) {
+    htim16.Instance->CCR1 = static_cast<uint32_t>(
+      MIN_PWM_BRIGHTNESS*PWM_SCALE
+    );
+  } else {
+    // Smoothly dim the LEDs during the transition between night and day
+    auto brightness = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)/2*(
+      1 + sinf(static_cast<float>(M_PI_2) / CIVIL_TWILIGHT_EL * day_fraction_s.solar_elevation)
+    );
+    htim16.Instance->CCR1 = static_cast<uint32_t>(
+      roundf(brightness*PWM_SCALE)
+    );
+  }
 
   return true;
 }
@@ -526,6 +522,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  DisplayNoFixPattern();
   while (1) {
     if (ubloxDataAvailable) {
       UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Navigation_Callback, 100);
