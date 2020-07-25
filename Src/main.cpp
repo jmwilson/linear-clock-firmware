@@ -73,7 +73,6 @@ static int missedFixCount = 0;
 
 const Print p(huart2);
 
-extern volatile const uint64_t _configBytes;
 extern const char *BUILD_STRING;
 
 /* USER CODE END PV */
@@ -495,19 +494,10 @@ int main(void)
   p.print(BUILD_STRING);
   p.println(")");
   RequireUbloxReady(1000);
-  if ((_configBytes & 1) == 1) {
-    // Program u-blox configuration on first boot and set bit in flash
-    UBX_DisableUART();
-    UBX_ConfigureI2C();
-    UBX_ConfigureNavigation();
-    UBX_SaveConfiguration();
-
-    HAL_FLASH_Unlock();
-    HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD,
-      reinterpret_cast<uint32_t>(&_configBytes), _configBytes & ~uint64_t{1});
-    HAL_FLASH_Lock();
-    p.println("u-blox configuration saved");
-  }
+  UBX_DisableUART();
+  UBX_ConfigureI2C();
+  UBX_ConfigureNavigation();
+  UBX_SaveConfiguration();
   UBX_PrintVersion();
   /* USER CODE END 2 */
 
