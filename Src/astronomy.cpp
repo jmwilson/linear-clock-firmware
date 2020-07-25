@@ -1,8 +1,8 @@
 #include <cmath>
 #include "astronomy.h"
 
-JD julian_date(int year, int month, int day, int hour,
- int min, int sec)
+JD JulianDay(const int year, const int month, const int day, const int hour,
+             const int min, const int sec)
 {
   const int a = (14 - month) / 12;
   const int y = year + 4800 + a;
@@ -16,25 +16,22 @@ JD julian_date(int year, int month, int day, int hour,
     jdn -= 1;
     jdf += 1;
   }
-  return {
-    .jdn = jdn,
-    .jdf = jdf,
-  };
+  return { jdn, jdf };
 }
 
-static constexpr float RADIANS(float deg)
+static constexpr float RADIANS(const float deg)
 {
   return 0.0174532924f * deg;
 }
 
-static constexpr float DEGREES(float rad)
+static constexpr float DEGREES(const float rad)
 {
   return 57.2957802f * rad;
 }
 
-day_fraction_result compute_day_fraction(float lat, float lon, const JD &jd)
+SolarDayData DayFraction(const float lat, const float lon, const JD &jd)
 {
-  const int epoch = 2451545;  // January 1, 2000 12:00 UT
+  constexpr int epoch = 2451545;  // January 1, 2000 12:00 UT
 
   // Reference: Meeus, Jean. Astronomical Algorithms, 2nd ed.
   // Richmond, Virginia: Willmann-Bell, 1998.
@@ -112,10 +109,5 @@ day_fraction_result compute_day_fraction(float lat, float lon, const JD &jd)
     day_fraction -= 1;
   }
 
-  return {
-    .day_fraction = day_fraction,
-    .daylength_fraction = daylength_fraction,
-    .solar_azimuth = A,
-    .solar_elevation = h,
-  };
+  return { day_fraction, daylength_fraction, A, h };
 }

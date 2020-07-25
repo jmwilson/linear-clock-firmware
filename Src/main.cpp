@@ -43,15 +43,15 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-const auto PWM_SCALE = 1000;
-const auto MIN_PWM_BRIGHTNESS = 0.1f;
-const auto CIVIL_TWILIGHT_EL = 6.0f;
+constexpr int PWM_SCALE = 1000;
+constexpr float MIN_PWM_BRIGHTNESS = 0.1f;
+constexpr float CIVIL_TWILIGHT_EL = 6;
 
-const auto NUM_TLC592x = 14;
-const auto TLC592x_BUF_SIZE = 2 * NUM_TLC592x;
-const auto NUM_LED = NUM_TLC592x * 16 / 2;
+constexpr int NUM_TLC592x = 14;
+constexpr size_t TLC592x_BUF_SIZE = 2 * NUM_TLC592x;
+constexpr int NUM_LED = NUM_TLC592x/2 * 16; // LEDs in each row
 
-const auto MAX_MISSED_FIX_COUNT = 30; // * 10 seconds = 5 minutes w/o GPS fix
+constexpr int MAX_MISSED_FIX_COUNT = 30; // * 10 s = 5 minutes w/o GPS fix
 
 /* USER CODE END PM */
 
@@ -92,52 +92,52 @@ static void MX_SPI1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static void Configure_TLC5926()
+static void ConfigureTLC5926()
 {
-  TLC5926_Switch_To_Special_Mode();
+  TLC5926_SwitchToSpecialMode();
 
   for (auto i = 0; i < NUM_TLC592x; i++) {
     // {CM,HC,[CC0:CC5]} = {0,1,000000}
     tlc592xBuf[2*i] = 0x00;
     tlc592xBuf[2*i + 1] = 0x40;
   }
-  if (HAL_SPI_Transmit_DMA(
-      &hspi1, tlc592xBuf, sizeof(tlc592xBuf)) != HAL_OK
-  ) {
+  if (HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf))
+      != HAL_OK) {
     Error_Handler();
   }
   while (hspi1.State != HAL_SPI_STATE_READY) { }
 
-  TLC5926_Switch_To_Normal_Mode();
+  TLC5926_SwitchToNormalMode();
 
   HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
 }
 
-static void Require_ublox(uint16_t timeout)
+static void RequireUbloxReady(uint16_t timeout)
 {
   const uint32_t tickstart = HAL_GetTick();
 
   while (HAL_GetTick() - tickstart < timeout) {
-    if (HAL_I2C_IsDeviceReady(&hi2c1, UBLOX_I2C_ADDRESS << 1, 1, 10) == HAL_OK) {
+    if (HAL_I2C_IsDeviceReady(&hi2c1, UBLOX_I2C_ADDRESS << 1, 1, 10)
+        == HAL_OK) {
       return;
     }
   }
   Error_Handler();
 }
 
-static bool Expect_ACK_Callback(uint8_t cls, uint8_t id,
-  uint8_t *payload, uint16_t length)
+static bool ExpectACKCallback(const uint8_t cls, const uint8_t id,
+                              const uint8_t *payload, const uint16_t length)
 {
-  return cls == UBX_ACK && id == UBX_ACK_ACK;
+  return cls == UBX_CLS::UBX_ACK && id == UBX_MSG::UBX_ACK_ACK;
 }
 
-static void Require_Ublox_ACK()
+static void RequireUbloxACK()
 {
   const uint32_t tickstart = HAL_GetTick();
   const uint32_t timeout = 1000;  // ACK must be sent within 1 s
 
   while (HAL_GetTick() - tickstart < timeout) {
-    if (UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Expect_ACK_Callback, 100)) {
+    if (UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, ExpectACKCallback, 100)) {
       return;
     }
     HAL_Delay(10);  // Don't hammer the bus
@@ -145,16 +145,16 @@ static void Require_Ublox_ACK()
   Error_Handler();
 }
 
-static void UBX_Disable_UART(void)
+static void UBX_DisableUART(void)
 {
-  uint8_t packet[] = {
+  uint8_t packet[] {
     UBLOX_SYNC_1,
     UBLOX_SYNC_2,
-    UBX_CFG,
-    UBX_CFG_PRT,
+    UBX_CLS::UBX_CFG,
+    UBX_MSG::UBX_CFG_PRT,
     0, 0, // space for length
 
-    UBX_PORT_UART1, // Port ID
+    UBX_PORT_UART, // Port ID
     0, // reserved
     UBX_INT16(0), // txReady
     UBX_INT32(0x80c0),  // mode: 8N1
@@ -166,23 +166,22 @@ static void UBX_Disable_UART(void)
 
     0, 0, // space for checksum
   };
-  UBX_Set_Size_And_Checksum(packet, sizeof(packet));
-  if (HAL_I2C_Master_Transmit(
-      &hi2c1, UBLOX_I2C_ADDRESS << 1, packet, sizeof(packet), 100) != HAL_OK
-  ) {
+  UBX_SetSizeAndChecksum(packet, sizeof(packet));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet,
+                              sizeof(packet), 100) != HAL_OK) {
     Error_Handler();
   }
-  Require_Ublox_ACK();
+  RequireUbloxACK();
 }
 
-static void UBX_Configure_Navigation(void)
+static void UBX_ConfigureNavigation(void)
 {
   // Set update period to 10 s
-  uint8_t packet_rate[] = {
+  uint8_t packet_rate[] {
     UBLOX_SYNC_1,
     UBLOX_SYNC_2,
-    UBX_CFG,
-    UBX_CFG_RATE,
+    UBX_CLS::UBX_CFG,
+    UBX_MSG::UBX_CFG_RATE,
     0, 0, // space for length
 
     UBX_INT16(1000), // measRate: 1000 ms
@@ -191,46 +190,43 @@ static void UBX_Configure_Navigation(void)
 
     0, 0, // space for checksum
   };
-  UBX_Set_Size_And_Checksum(packet_rate, sizeof(packet_rate));
-  if (HAL_I2C_Master_Transmit(
-      &hi2c1, UBLOX_I2C_ADDRESS << 1,
-      packet_rate, sizeof(packet_rate), 100) != HAL_OK
-  ) {
+  UBX_SetSizeAndChecksum(packet_rate, sizeof(packet_rate));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1,
+                              packet_rate, sizeof(packet_rate), 100)
+      != HAL_OK) {
     Error_Handler();
   }
-  Require_Ublox_ACK();
+  RequireUbloxACK();
 
   // Enable periodic updates
-  uint8_t packet_msg[] = {
+  uint8_t packet_msg[] {
     UBLOX_SYNC_1,
     UBLOX_SYNC_2,
-    UBX_CFG,
-    UBX_CFG_MSG,
+    UBX_CLS::UBX_CFG,
+    UBX_MSG::UBX_CFG_MSG,
     0, 0, // space for length
 
-    UBX_NAV, // msgClass
-    UBX_NAV_PVT, // msgID
+    UBX_CLS::UBX_NAV, // msgClass
+    UBX_MSG::UBX_NAV_PVT, // msgID
     1, // rate
 
     0, 0, // space for checksum
   };
-  UBX_Set_Size_And_Checksum(packet_msg, sizeof(packet_msg));
-  if (HAL_I2C_Master_Transmit(
-      &hi2c1, UBLOX_I2C_ADDRESS << 1,
-      packet_msg, sizeof(packet_msg), 100) != HAL_OK
-  ) {
+  UBX_SetSizeAndChecksum(packet_msg, sizeof(packet_msg));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet_msg,
+                              sizeof(packet_msg), 100) != HAL_OK) {
     Error_Handler();
   }
-  Require_Ublox_ACK();
+  RequireUbloxACK();
 }
 
-static void UBX_Configure_I2C(void)
+static void UBX_ConfigureI2C(void)
 {
-  uint8_t packet[] = {
+  uint8_t packet[] {
     UBLOX_SYNC_1,
     UBLOX_SYNC_2,
-    UBX_CFG,
-    UBX_CFG_PRT,
+    UBX_CLS::UBX_CFG,
+    UBX_MSG::UBX_CFG_PRT,
     0, 0, // space for length
 
     UBX_PORT_I2C, // Port ID
@@ -245,22 +241,21 @@ static void UBX_Configure_I2C(void)
 
     0, 0, // space for checksum
   };
-  UBX_Set_Size_And_Checksum(packet, sizeof(packet));
-  if (HAL_I2C_Master_Transmit(
-      &hi2c1, UBLOX_I2C_ADDRESS << 1, packet, sizeof(packet), 100) != HAL_OK
-  ) {
+  UBX_SetSizeAndChecksum(packet, sizeof(packet));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet,
+                              sizeof(packet), 100) != HAL_OK) {
     Error_Handler();
   }
-  Require_Ublox_ACK();
+  RequireUbloxACK();
 }
 
-static void UBX_Save_Configuration(void)
+static void UBX_SaveConfiguration(void)
 {
-  uint8_t packet[] = {
+  uint8_t packet[] {
     UBLOX_SYNC_1,
     UBLOX_SYNC_2,
-    UBX_CFG,
-    UBX_CFG_CFG,
+    UBX_CLS::UBX_CFG,
+    UBX_MSG::UBX_CFG_CFG,
     0, 0, // space for length
 
     UBX_INT32(0),  // clearMask
@@ -269,19 +264,18 @@ static void UBX_Save_Configuration(void)
 
     0, 0, // space for checksum
   };
-  UBX_Set_Size_And_Checksum(packet, sizeof(packet));
-  if (HAL_I2C_Master_Transmit(
-      &hi2c1, UBLOX_I2C_ADDRESS << 1, packet, sizeof(packet), 100) != HAL_OK
-  ) {
+  UBX_SetSizeAndChecksum(packet, sizeof(packet));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet,
+                              sizeof(packet), 100) != HAL_OK) {
     Error_Handler();
   }
-  Require_Ublox_ACK();
+  RequireUbloxACK();
 }
 
-static bool UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
-  uint8_t *payload, uint16_t length)
+static bool PrintVersionCallback(const uint8_t cls, const uint8_t id,
+                                       const uint8_t *payload, const uint16_t length)
 {
-  if (cls != UBX_MON || id != UBX_MON_VER) {
+  if (cls != UBX_CLS::UBX_MON || id != UBX_MSG::UBX_MON_VER) {
     return false;
   }
 
@@ -299,26 +293,25 @@ static bool UBX_Print_Version_Callback(uint8_t cls, uint8_t id,
   return true;
 }
 
-static void UBX_Print_Version(void)
+static void UBX_PrintVersion(void)
 {
-  uint8_t packet[] = {
+  uint8_t packet[] {
     UBLOX_SYNC_1,
     UBLOX_SYNC_2,
-    UBX_MON,
-    UBX_MON_VER,
+    UBX_CLS::UBX_MON,
+    UBX_MSG::UBX_MON_VER,
     0, 0, // space for length
     0, 0, // space for checksum
   };
-  UBX_Set_Size_And_Checksum(packet, sizeof(packet));
-  if (HAL_I2C_Master_Transmit(
-      &hi2c1, UBLOX_I2C_ADDRESS << 1, packet, sizeof(packet), 100) != HAL_OK
-  ) {
+  UBX_SetSizeAndChecksum(packet, sizeof(packet));
+  if (HAL_I2C_Master_Transmit(&hi2c1, UBLOX_I2C_ADDRESS << 1, packet,
+                              sizeof(packet), 100) != HAL_OK) {
     Error_Handler();
   }
 
   const uint32_t tickstart = HAL_GetTick();
   while (HAL_GetTick() - tickstart < 1000) {
-    if (UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, UBX_Print_Version_Callback, 100)) {
+    if (UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, PrintVersionCallback, 100)) {
       return;
     }
     HAL_Delay(10);  // Don't hammer the bus
@@ -336,25 +329,26 @@ static void DisplayNoFixPattern()
   );
 }
 
-static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint16_t length)
+static bool NavigationCallback(const uint8_t cls, const uint8_t id,
+                               const uint8_t *payload, const uint16_t length)
 {
-  if (cls != UBX_NAV || id != UBX_NAV_PVT) {
+  if (cls != UBX_CLS::UBX_NAV || id != UBX_MSG::UBX_NAV_PVT) {
     return false;
   }
 
-  uint16_t year = readU2(payload, 4);
-  uint8_t month = payload[6];
-  uint8_t day = payload[7];
-  uint8_t hour = payload[8];
-  uint8_t min = payload[9];
-  uint8_t sec = payload[10];
-  uint8_t flags = payload[21];
-  uint8_t numSV = payload[23];
-  int32_t lon = readU4(payload, 24);
-  int32_t lat = readU4(payload, 28);
-  int32_t alt_msl = readU4(payload, 36);
+  const uint16_t year = readU2(payload, 4);
+  const uint8_t month = payload[6];
+  const uint8_t day = payload[7];
+  const uint8_t hour = payload[8];
+  const uint8_t min = payload[9];
+  const uint8_t sec = payload[10];
+  const uint8_t flags = payload[21];
+  const uint8_t numSV = payload[23];
+  const int32_t lon = readU4(payload, 24);
+  const int32_t lat = readU4(payload, 28);
+  const int32_t alt_msl = readU4(payload, 36);
 
-  auto gnssFixOK = flags & 1;
+  const auto gnssFixOK = flags & 1;
   if (gnssFixOK) {
     missedFixCount = 0;
   } else {
@@ -391,38 +385,35 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   p.print(":");
   p.println(sec, Print::DEC, 2);
 
-  auto jd = julian_date(year, month, day, hour, min, sec);
-  auto day_fraction_s = compute_day_fraction(lat * 1e-7f, lon * 1e-7f, jd);
+  const auto jd = JulianDay(year, month, day, hour, min, sec);
+  const auto df = DayFraction(lat * 1e-7f, lon * 1e-7f, jd);
 
   p.print("Solar azimuth: ");
-  p.print(day_fraction_s.solar_azimuth);
+  p.print(df.solar_azimuth);
   p.println("°");
 
   p.print("Solar elevation: ");
-  p.print(day_fraction_s.solar_elevation);
+  p.print(df.solar_elevation);
   p.println("°");
 
   p.print("Day fraction: ");
-  p.println(day_fraction_s.day_fraction, 3);
+  p.println(df.day_fraction, 3);
 
   p.print("Sunset at day fraction: ");
-  p.println(day_fraction_s.daylength_fraction, 3);
+  p.println(df.daylength_fraction, 3);
   p.println();
 
   // Set bit sunset_fraction in the stream of bits
-  if (isnanf(day_fraction_s.daylength_fraction)) {
+  if (isnanf(df.daylength_fraction)) {
     // No sunrise or sunset
     memset(tlc592xBuf, 0, TLC592x_BUF_SIZE / 2);
   } else {
-    auto sunset_fraction = static_cast<int>(
-      roundf(NUM_LED*day_fraction_s.daylength_fraction));
+    const auto sunset_fraction = static_cast<int>(
+      roundf(NUM_LED*df.daylength_fraction));
     for (auto b = 0; b < TLC592x_BUF_SIZE/2; b++) {
       if (NUM_LED - 8*(b + 1) <= sunset_fraction
-        && sunset_fraction < NUM_LED - 8*b
-      ) {
-        tlc592xBuf[b] = static_cast<uint8_t>(
-          1 << (NUM_LED - sunset_fraction - 8*b)
-        );
+          && sunset_fraction < NUM_LED - 8*b) {
+        tlc592xBuf[b] = 1 << (NUM_LED - sunset_fraction - 8*b);
       } else {
         tlc592xBuf[b] = 0;
       }
@@ -430,31 +421,31 @@ static bool Navigation_Callback(uint8_t cls, uint8_t id, uint8_t *payload, uint1
   }
 
   // Set day_fraction bits high starting from the left
-  auto day_fraction = static_cast<int>(
-    roundf(NUM_LED*day_fraction_s.day_fraction));
+  const auto day_fraction = static_cast<int>(
+    roundf(NUM_LED*df.day_fraction));
   for (auto b = 0; b < TLC592x_BUF_SIZE/2; b++) {
     if (day_fraction >= NUM_LED - 8*b) {
       tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0xff;
     } else if (day_fraction < NUM_LED - 8*(b + 1)) {
       tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0x00;
     } else {
-      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = static_cast<uint8_t>(
-        0xff << (NUM_LED - day_fraction - 8*b)
-      );
+      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] =
+        0xff << (NUM_LED - day_fraction - 8*b);
     }
   }
   HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
 
-  if (day_fraction_s.solar_elevation > CIVIL_TWILIGHT_EL) {
+  if (df.solar_elevation > CIVIL_TWILIGHT_EL) {
     htim16.Instance->CCR1 = PWM_SCALE;
-  } else if (day_fraction_s.solar_elevation < -CIVIL_TWILIGHT_EL) {
+  } else if (df.solar_elevation < -CIVIL_TWILIGHT_EL) {
     htim16.Instance->CCR1 = static_cast<uint32_t>(
       MIN_PWM_BRIGHTNESS*PWM_SCALE
     );
   } else {
     // Smoothly dim the LEDs during the transition between night and day
-    auto brightness = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)/2*(
-      1 + sinf(static_cast<float>(M_PI_2) / CIVIL_TWILIGHT_EL * day_fraction_s.solar_elevation)
+    const float brightness = MIN_PWM_BRIGHTNESS + (1 - MIN_PWM_BRIGHTNESS)/2*(
+      1 + sinf(static_cast<float>(M_PI_2) / CIVIL_TWILIGHT_EL
+               * df.solar_elevation)
     );
     htim16.Instance->CCR1 = static_cast<uint32_t>(
       roundf(brightness*PWM_SCALE)
@@ -499,33 +490,33 @@ int main(void)
   MX_TIM16_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-  Configure_TLC5926();
+  ConfigureTLC5926();
   p.print("\r\nDevice Reset (build ");
   p.print(BUILD_STRING);
   p.println(")");
-  Require_ublox(1000);
+  RequireUbloxReady(1000);
   if ((_configBytes & 1) == 1) {
     // Program u-blox configuration on first boot and set bit in flash
-    UBX_Disable_UART();
-    UBX_Configure_I2C();
-    UBX_Configure_Navigation();
-    UBX_Save_Configuration();
+    UBX_DisableUART();
+    UBX_ConfigureI2C();
+    UBX_ConfigureNavigation();
+    UBX_SaveConfiguration();
 
     HAL_FLASH_Unlock();
     HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD,
-      reinterpret_cast<uint32_t>(&_configBytes), _configBytes & ~(uint64_t)1);
+      reinterpret_cast<uint32_t>(&_configBytes), _configBytes & ~uint64_t{1});
     HAL_FLASH_Lock();
     p.println("u-blox configuration saved");
   }
-  UBX_Print_Version();
+  UBX_PrintVersion();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   DisplayNoFixPattern();
-  while (1) {
+  while (true) {
     if (ubloxDataAvailable) {
-      UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, Navigation_Callback, 100);
+      UBX_Receive(&hi2c1, UBLOX_I2C_ADDRESS, NavigationCallback, 100);
     }
     HAL_SuspendTick();
     __WFE();

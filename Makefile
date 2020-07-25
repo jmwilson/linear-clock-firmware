@@ -43,7 +43,6 @@ C_SOURCES =  \
 Src/stm32g0xx_it.c \
 Src/stm32g0xx_hal_msp.c \
 Src/system_stm32g0xx.c \
-Src/ublox.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_gpio.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_i2c.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_i2c_ex.c \
@@ -70,7 +69,8 @@ CXX_SOURCES = \
 Src/main.cpp \
 Src/astronomy.cpp \
 Src/Print.cpp \
-Src/tlc5926.cpp
+Src/tlc5926.cpp \
+Src/ublox.cpp
 
 # ASM sources
 ASM_SOURCES =  \
@@ -155,7 +155,7 @@ CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 CFLAGS += -Wdouble-promotion -Wfloat-conversion
 HG_RELEASE := $(shell hg id --tags)
 
-CXXFLAGS = $(CFLAGS) -Wsign-promo
+CXXFLAGS = $(CFLAGS) -Wsign-promo -fno-exceptions
 
 #######################################
 # LDFLAGS

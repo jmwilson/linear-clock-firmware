@@ -31,10 +31,10 @@
 class Print
 {
 public:
-  static const int DEC = 10;
-  static const int HEX = 16;
-  static const int OCT = 8;
-  static const int BIN = 2;
+  static constexpr int DEC = 10;
+  static constexpr int HEX = 16;
+  static constexpr int OCT = 8;
+  static constexpr int BIN = 2;
 
   Print(UART_HandleTypeDef &uart) : _uart(&uart) {}
 

@@ -1,17 +1,17 @@
 #include "main.h"
 #include "tlc5926.h"
 
-static void TLC5926_Mode_Switch(bool special) {
-  uint32_t bsrr_frames[] = {
-    (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
-    (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | (TLC592x_OE_Pin << 16),
-    (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
+static void TLC5926_ModeSwitch(bool special) {
+  const uint32_t bsrr_frames[] {
+    TLC592x_CLK_Pin << 16 | TLC592x_LE_Pin << 16 | TLC592x_OE_Pin,
+    TLC592x_CLK_Pin << 16 | TLC592x_LE_Pin << 16 | TLC592x_OE_Pin << 16,
+    TLC592x_CLK_Pin << 16 | TLC592x_LE_Pin << 16 | TLC592x_OE_Pin,
     special
-      ? (TLC592x_CLK_Pin << 16) | TLC592x_LE_Pin | TLC592x_OE_Pin
-      : (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
-    (TLC592x_CLK_Pin << 16) | (TLC592x_LE_Pin << 16) | TLC592x_OE_Pin,
+      ? TLC592x_CLK_Pin << 16 | TLC592x_LE_Pin | TLC592x_OE_Pin
+      : TLC592x_CLK_Pin << 16 | TLC592x_LE_Pin << 16 | TLC592x_OE_Pin,
+    TLC592x_CLK_Pin << 16 | TLC592x_LE_Pin << 16 | TLC592x_OE_Pin,
   };
-  for (auto frame: bsrr_frames) {
+  for (const auto frame: bsrr_frames) {
     // Clock low
     TLC592x_CLK_GPIO_Port->BSRR = frame;
     __NOP(); __NOP(); __NOP(); __NOP();
@@ -23,13 +23,13 @@ static void TLC5926_Mode_Switch(bool special) {
   TLC592x_CLK_GPIO_Port->BSRR = TLC592x_CLK_Pin << 16;
 }
 
-void TLC5926_Switch_To_Special_Mode(void)
+void TLC5926_SwitchToSpecialMode(void)
 {
   assert_param(TLC592x_CLK_GPIO_Port == TLC592x_OE_GPIO_Port
     && TLC592x_OE_GPIO_Port == TLC592x_LE_GPIO_Port);
 
   // Reconfigute CLK and OE pins as GPIO
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitTypeDef GPIO_InitStruct {};
   GPIO_InitStruct.Pin = TLC592x_CLK_Pin|TLC592x_OE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -37,7 +37,7 @@ void TLC5926_Switch_To_Special_Mode(void)
   HAL_GPIO_Init(TLC592x_CLK_GPIO_Port, &GPIO_InitStruct);
 
   // Bit-bang the mode-switching sequence
-  TLC5926_Mode_Switch(true);
+  TLC5926_ModeSwitch(true);
 
   // Restore CLK to peripheral, but leave OE in GPIO
   GPIO_InitStruct.Pin = TLC592x_CLK_Pin;
@@ -48,13 +48,13 @@ void TLC5926_Switch_To_Special_Mode(void)
   HAL_GPIO_Init(TLC592x_CLK_GPIO_Port, &GPIO_InitStruct);
 }
 
-void TLC5926_Switch_To_Normal_Mode(void)
+void TLC5926_SwitchToNormalMode(void)
 {
   assert_param(TLC592x_CLK_GPIO_Port == TLC592x_OE_GPIO_Port
     && TLC592x_OE_GPIO_Port == TLC592x_LE_GPIO_Port);
 
   // Reconfigute CLK and OE pins as GPIO
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitTypeDef GPIO_InitStruct {};
   GPIO_InitStruct.Pin = TLC592x_CLK_Pin|TLC592x_OE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -62,7 +62,7 @@ void TLC5926_Switch_To_Normal_Mode(void)
   HAL_GPIO_Init(TLC592x_CLK_GPIO_Port, &GPIO_InitStruct);
 
   // Bit-bang the mode-switching sequence
-  TLC5926_Mode_Switch(false);
+  TLC5926_ModeSwitch(false);
 
   // Restore CLK and OE pins to peripherals
   GPIO_InitStruct.Pin = TLC592x_CLK_Pin;
