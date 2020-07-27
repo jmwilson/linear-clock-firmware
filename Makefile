@@ -66,11 +66,11 @@ Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_spi.c \
 Drivers/STM32G0xx_HAL_Driver/Src/stm32g0xx_hal_spi_ex.c
 
 CXX_SOURCES = \
-Src/main.cpp \
-Src/astronomy.cpp \
-Src/Print.cpp \
-Src/tlc5926.cpp \
-Src/ublox.cpp
+Src/main.cc \
+Src/astronomy.cc \
+Src/Print.cc \
+Src/tlc5926.cc \
+Src/ublox.cc
 
 # ASM sources
 ASM_SOURCES =  \
@@ -183,14 +183,14 @@ vpath %.s $(sort $(dir $(ASM_SOURCES)))
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
 vpath %.c $(sort $(dir $(C_SOURCES)))
 # list of C++ objects
-OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(CXX_SOURCES:.cpp=.o)))
-vpath %.cpp $(sort $(dir $(CXX_SOURCES)))
+OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(CXX_SOURCES:.cc=.o)))
+vpath %.cc $(sort $(dir $(CXX_SOURCES)))
 
 $(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
 
-$(BUILD_DIR)/%.o: %.cpp Makefile | $(BUILD_DIR)
-	$(CXX) -c $(CXXFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.cpp=.lst)) $< -o $@
+$(BUILD_DIR)/%.o: %.cc Makefile | $(BUILD_DIR)
+	$(CXX) -c $(CXXFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.cc=.lst)) $< -o $@
 
 $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
 	$(AS) -c $(CFLAGS) $< -o $@

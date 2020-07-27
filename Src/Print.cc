@@ -1,5 +1,5 @@
 /*
- Print.cpp - Base class that provides print() and println()
+ Print.cc - Base class that provides print() and println()
  Copyright (c) 2008 David A. Mellis.  All right reserved.
  Copyright (c) 2020 James Wilson. All rights reserved.
 
