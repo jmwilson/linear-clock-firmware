@@ -1,0 +1,7 @@
+connect
+h
+erase
+loadfile build/sunclock.hex
+r
+g
+exit

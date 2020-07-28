@@ -209,7 +209,10 @@ $(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir $@
 
-flash: $(BUILD_DIR)/$(TARGET).hex
+flash_jlink: $(BUILD_DIR)/$(TARGET).hex
+	JLinkExe -Device STM32G031K8 -If SWD -Speed auto -NoGui 1 -CommandFile flash_jlink.jlink
+
+flash_openocd: $(BUILD_DIR)/$(TARGET).hex
 	openocd -f st_nucleo_g0.cfg -c "init; halt; stm32g0x mass_erase 0; program $< verify reset exit"
 
 #######################################
