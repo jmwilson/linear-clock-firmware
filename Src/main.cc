@@ -792,7 +792,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SAFEBOOT_N_GPIO_Port, SAFEBOOT_N_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(NUCLEO_LED_GPIO_Port, NUCLEO_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : TLC592x_LE_Pin */
   GPIO_InitStruct.Pin = TLC592x_LE_Pin;
@@ -808,12 +808,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(SAFEBOOT_N_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : NUCLEO_LED_Pin */
-  GPIO_InitStruct.Pin = NUCLEO_LED_Pin;
+  /*Configure GPIO pin : ERROR_LED_Pin */
+  GPIO_InitStruct.Pin = ERROR_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(NUCLEO_LED_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(ERROR_LED_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : TX_READY_Pin */
   GPIO_InitStruct.Pin = TX_READY_Pin;
@@ -861,7 +861,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-  HAL_GPIO_WritePin(NUCLEO_LED_GPIO_Port, NUCLEO_LED_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin, GPIO_PIN_SET);
   while(1) { }
   /* USER CODE END Error_Handler_Debug */
 }
@@ -881,7 +881,7 @@ void assert_failed(uint8_t *file, uint32_t line)
   p.print(reinterpret_cast<char *>(file));
   p.print(", line ");
   p.println(line);
-  HAL_GPIO_WritePin(NUCLEO_LED_GPIO_Port, NUCLEO_LED_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin, GPIO_PIN_SET);
   while(1) { }
   /* USER CODE END 6 */
 }
