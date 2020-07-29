@@ -2,7 +2,6 @@ syntax: glob
 build
 .mxproject
 .vscode
-Drivers
 *.orig
 .DS_Store
 Docs
