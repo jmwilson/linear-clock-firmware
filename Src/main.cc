@@ -83,6 +83,11 @@ static volatile bool ubloxDataAvailable = false;
 
 static int missedFixCount = 0;
 
+static bool initialFix = false;
+static int32_t lastLon;
+static int32_t lastLat;
+static int32_t lastAlt;
+
 const Print p(huart2);
 
 extern const char *BUILD_STRING;
@@ -353,21 +358,34 @@ static bool NavigationCallback(const uint8_t cls, const uint8_t id,
   const uint8_t hour = payload[8];
   const uint8_t min = payload[9];
   const uint8_t sec = payload[10];
+  const uint8_t valid = payload[11];
   const uint8_t flags = payload[21];
   const uint8_t numSV = payload[23];
-  const int32_t lon = readU4(payload, 24);
-  const int32_t lat = readU4(payload, 28);
-  const int32_t alt_msl = readU4(payload, 36);
+  int32_t lon = readU4(payload, 24);
+  int32_t lat = readU4(payload, 28);
+  int32_t alt_msl = readU4(payload, 36);
 
-  const auto gnssFixOK = flags & 1;
+  const bool gnssFixOK = flags & 1;
   if (gnssFixOK) {
+    initialFix = true;
     missedFixCount = 0;
+    lastLon = lon;
+    lastLat = lat;
+    lastAlt = alt_msl;
   } else {
-    p.println("Waiting for GPS fix...");
-    if (++missedFixCount == MAX_MISSED_FIX_COUNT) {
-      DisplayNoFixPattern();
+    const bool validDateAndTime = (valid & 3) == 3;
+    if (initialFix && validDateAndTime) {
+      p.println("Time fix only, reusing last position fix");
+      lon = lastLon;
+      lat = lastLat;
+      alt_msl = lastAlt;
+    } else {
+      p.println("Waiting for GNSS fix...");
+      if (++missedFixCount == MAX_MISSED_FIX_COUNT) {
+        DisplayNoFixPattern();
+      }
+      return true;
     }
-    return true;
   }
 
   p.print("Position: ");
