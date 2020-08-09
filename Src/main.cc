@@ -432,34 +432,34 @@ static bool NavigationCallback(const uint8_t cls, const uint8_t id,
   p.println(df.daylength_fraction, 3);
   p.println();
 
-  // Set bit sunset_fraction in the stream of bits
   if (isnanf(df.daylength_fraction)) {
     // No sunrise or sunset
     memset(tlc592xBuf, 0, TLC592x_BUF_SIZE / 2);
   } else {
-    const auto sunset_fraction = static_cast<int>(
-      roundf(NUM_LED*df.daylength_fraction));
-    for (auto b = 0; b < TLC592x_BUF_SIZE/2; b++) {
-      if (NUM_LED - 8*(b + 1) <= sunset_fraction
-          && sunset_fraction < NUM_LED - 8*b) {
-        tlc592xBuf[b] = 1 << (NUM_LED - sunset_fraction - 8*b);
+    // Set one bit for the time of sunset
+    const auto sunset_pos = static_cast<int>(
+      roundf((NUM_LED - 1)*df.daylength_fraction));
+    const int j = NUM_LED - 1 - sunset_pos;
+    for (int b = 0; b < static_cast<int>(TLC592x_BUF_SIZE/2); b++) {
+      if (8*b <= j && j < 8*(b + 1)) {
+        tlc592xBuf[b] = 1 << (j - 8*b);
       } else {
         tlc592xBuf[b] = 0;
       }
     }
   }
 
-  // Set day_fraction bits high starting from the left
-  const auto day_fraction = static_cast<int>(
+  // Set day_leds bits high starting from the left
+  const auto day_leds = static_cast<int>(
     roundf(NUM_LED*df.day_fraction));
-  for (auto b = 0; b < TLC592x_BUF_SIZE/2; b++) {
-    if (day_fraction >= NUM_LED - 8*b) {
+  const int j = NUM_LED - 1 - day_leds;
+  for (int b = 0; b < static_cast<int>(TLC592x_BUF_SIZE/2); b++) {
+    if (j < 8*b) {
       tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0xff;
-    } else if (day_fraction < NUM_LED - 8*(b + 1)) {
-      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0x00;
+    } else if (j >= 8*(b + 1)) {
+      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0;
     } else {
-      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] =
-        0xff << (NUM_LED - day_fraction - 8*b);
+      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0xff << (1 + j - 8*b);
     }
   }
   HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
