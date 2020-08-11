@@ -437,8 +437,8 @@ static bool NavigationCallback(const uint8_t cls, const uint8_t id,
     memset(tlc592xBuf, 0, TLC592x_BUF_SIZE / 2);
   } else {
     // Set one bit for the time of sunset
-    const auto sunset_pos = static_cast<int>(
-      roundf((NUM_LED - 1)*df.daylength_fraction));
+    const auto sunset_pos = std::max(0,
+      static_cast<int>(roundf(NUM_LED*df.daylength_fraction)) - 1);
     const int j = NUM_LED - 1 - sunset_pos;
     for (int b = 0; b < static_cast<int>(TLC592x_BUF_SIZE/2); b++) {
       if (8*b <= j && j < 8*(b + 1)) {
