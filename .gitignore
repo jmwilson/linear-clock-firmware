@@ -1,0 +1,6 @@
+build
+.mxproject
+.vscode
+*.orig
+.DS_Store
+Docs
