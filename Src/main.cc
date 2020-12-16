@@ -337,8 +337,10 @@ static void UBX_PrintVersion(void)
 static void DisplayNoFixPattern()
 {
   memset(tlc592xBuf, 0, sizeof(tlc592xBuf));
-  tlc592xBuf[7] = 1;
-  tlc592xBuf[21] = 1;
+  tlc592xBuf[6] = 1;
+  tlc592xBuf[7] = 0x80;
+  tlc592xBuf[20] = 1;
+  tlc592xBuf[21] = 0x80;
   HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
   htim16.Instance->CCR1 = static_cast<uint32_t>(
     MIN_PWM_BRIGHTNESS*PWM_SCALE
@@ -437,12 +439,11 @@ static bool NavigationCallback(const uint8_t cls, const uint8_t id,
     memset(tlc592xBuf, 0, TLC592x_BUF_SIZE / 2);
   } else {
     // Set one bit for the time of sunset
-    const auto sunset_pos = std::max(0,
-      static_cast<int>(roundf(NUM_LED*df.daylength_fraction)) - 1);
-    const int j = NUM_LED - 1 - sunset_pos;
+    const auto sunset_pos = std::min(NUM_LED - 1,
+      static_cast<int>(NUM_LED * (1 - df.daylength_fraction)));
     for (int b = 0; b < static_cast<int>(TLC592x_BUF_SIZE/2); b++) {
-      if (8*b <= j && j < 8*(b + 1)) {
-        tlc592xBuf[b] = 1 << (j - 8*b);
+      if (NUM_LED - 8*(b + 1) <= sunset_pos && sunset_pos < NUM_LED - 8*b) {
+        tlc592xBuf[b] = 1 << (sunset_pos - (NUM_LED - 8*(b + 1)));
       } else {
         tlc592xBuf[b] = 0;
       }
@@ -450,16 +451,16 @@ static bool NavigationCallback(const uint8_t cls, const uint8_t id,
   }
 
   // Set day_leds bits high starting from the left
-  const auto day_leds = static_cast<int>(
-    roundf(NUM_LED*df.day_fraction));
-  const int j = NUM_LED - 1 - day_leds;
+  const auto day_leds = std::min(NUM_LED,
+    static_cast<int>((1 + NUM_LED) * df.day_fraction));
   for (int b = 0; b < static_cast<int>(TLC592x_BUF_SIZE/2); b++) {
-    if (j < 8*b) {
-      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0xff;
-    } else if (j >= 8*(b + 1)) {
+    if (day_leds <= NUM_LED - 8*(b + 1)) {
       tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0;
+    } else if (day_leds >= NUM_LED - 8*b) {
+      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0xff;
     } else {
-      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] = 0xff << (1 + j - 8*b);
+      tlc592xBuf[TLC592x_BUF_SIZE/2 + b] =
+        (1 << (day_leds - (NUM_LED - 8*(b + 1)))) - 1;
     }
   }
   HAL_SPI_Transmit_DMA(&hspi1, tlc592xBuf, sizeof(tlc592xBuf));
@@ -476,9 +477,9 @@ static bool NavigationCallback(const uint8_t cls, const uint8_t id,
       1 + sinf(static_cast<float>(M_PI_2) / CIVIL_TWILIGHT_EL
                * df.solar_elevation)
     );
-    htim16.Instance->CCR1 = static_cast<uint32_t>(
-      roundf(brightness*PWM_SCALE)
-    );
+    htim16.Instance->CCR1 = std::min(
+      static_cast<uint32_t>(brightness * (1 + PWM_SCALE)),
+      static_cast<uint32_t>(PWM_SCALE));
   }
 
   return true;
@@ -671,7 +672,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
   hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_LSB;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 7;
