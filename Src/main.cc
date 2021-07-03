@@ -74,6 +74,7 @@ SPI_HandleTypeDef hspi1;
 DMA_HandleTypeDef hdma_spi1_tx;
 
 TIM_HandleTypeDef htim16;
+TIM_HandleTypeDef htim17;
 
 UART_HandleTypeDef huart2;
 
@@ -102,6 +103,7 @@ static void MX_I2C1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM16_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_TIM17_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -345,6 +347,7 @@ static void DisplayNoFixPattern()
   htim16.Instance->CCR1 = static_cast<uint32_t>(
     MIN_PWM_BRIGHTNESS*PWM_SCALE
   );
+  HAL_TIM_Base_Start_IT(&htim17);  // blink the diagnostic LED
 }
 
 static bool NavigationCallback(const uint8_t cls, const uint8_t id,
@@ -374,6 +377,9 @@ static bool NavigationCallback(const uint8_t cls, const uint8_t id,
     lastLon = lon;
     lastLat = lat;
     lastAlt = alt_msl;
+    // stop blinking the LED
+    HAL_TIM_Base_Stop_IT(&htim17);
+    HAL_GPIO_WritePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin, GPIO_PIN_RESET);
   } else {
     const bool validDateAndTime = (valid & 3) == 3;
     if (initialFix && validDateAndTime) {
@@ -519,8 +525,8 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM16_Init();
   MX_SPI1_Init();
+  MX_TIM17_Init();
   /* USER CODE BEGIN 2 */
-  ConfigureTLC5926();
   p.print("\r\nDevice Reset (build ");
   p.print(BUILD_STRING);
   p.println(")");
@@ -530,6 +536,7 @@ int main(void)
   UBX_ConfigureNavigation();
   UBX_SaveConfiguration();
   UBX_PrintVersion();
+  ConfigureTLC5926();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -752,6 +759,38 @@ static void MX_TIM16_Init(void)
 }
 
 /**
+  * @brief TIM17 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM17_Init(void)
+{
+
+  /* USER CODE BEGIN TIM17_Init 0 */
+
+  /* USER CODE END TIM17_Init 0 */
+
+  /* USER CODE BEGIN TIM17_Init 1 */
+
+  /* USER CODE END TIM17_Init 1 */
+  htim17.Instance = TIM17;
+  htim17.Init.Prescaler = 3999;
+  htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim17.Init.Period = 7999;
+  htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim17.Init.RepetitionCounter = 0;
+  htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim17) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM17_Init 2 */
+
+  /* USER CODE END TIM17_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -883,6 +922,13 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
     HAL_GPIO_WritePin(TLC592x_LE_GPIO_Port, TLC592x_LE_Pin, GPIO_PIN_RESET);
   }
 }
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM17) {
+    HAL_GPIO_TogglePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin);
+  }
+}
 /* USER CODE END 4 */
 
 /**
@@ -893,6 +939,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
+  HAL_TIM_Base_Stop_IT(&htim17);
   HAL_GPIO_WritePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin, GPIO_PIN_SET);
   while(1) { }
   /* USER CODE END Error_Handler_Debug */
@@ -913,8 +960,7 @@ void assert_failed(uint8_t *file, uint32_t line)
   p.print(reinterpret_cast<char *>(file));
   p.print(", line ");
   p.println(line);
-  HAL_GPIO_WritePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin, GPIO_PIN_SET);
-  while(1) { }
+  Error_Handler();
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
